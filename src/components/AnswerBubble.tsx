@@ -25,7 +25,6 @@ export function AnswerBubble({ text, isSpeaking, isConfused, c, onReplay }: Prop
   return (
     <div style={{
       maxWidth: '88%',
-      maxHeight: 200, overflowY: 'auto',
       background: isConfused ? '#fff' : c.blue,
       color: isConfused ? c.deepBlue : '#fff',
       padding: '10px 14px',

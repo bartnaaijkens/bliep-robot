@@ -363,7 +363,7 @@ export default function App() {
   const isTablesMode = appMode === 'tables'
   const showQuestionAffordance = !isTablesMode && phase !== 'idle' && phase !== 'listening' && question
   const showSubtitle = !hasInteracted && !threadTopic && !isTablesMode
-  const showExamples = phase === 'idle' && !threadTopic && !hasInteracted && !isTablesMode
+  const showExamples = phase === 'idle' && !threadTopic && !isTablesMode
 
   const questionsStatusText: Record<string, string> = {
     idle:      hasInteracted || threadTopic ? 'Ik wacht op je vraag…' : 'Hoi! Wat wil je weten?',
@@ -539,7 +539,7 @@ export default function App() {
 
         {/* Answer / examples (vragen mode only) */}
         {!isTablesMode && (
-          <div style={{ width: '100%', minHeight: 76, marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, padding: '0 4px' }}>
+          <div style={{ width: '100%', minHeight: 76, marginTop: 10, paddingBottom: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, padding: '0 4px 20px' }}>
             {(phase === 'speaking' || phase === 'result' || phase === 'confused') && answer && (
               <AnswerBubble
                 text={answer}
