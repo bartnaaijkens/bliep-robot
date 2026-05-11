@@ -38,7 +38,10 @@ export const TOPIC_ICONS: Record<string, string> = {
 }
 
 export const EXAMPLE_PROMPTS = [
-  { label: 'Wat eten egels?' },
-  { label: 'Waarom is de lucht blauw?' },
-  { label: 'Hoe ver is de maan?' },
+  { label: 'Hoe werkt een vulkaan?' },
+  { label: 'Waarom valt alles naar beneden?' },
+  { label: 'Hoe maken bijen honing?' },
+  { label: 'Hoe denkt een octopus?' },
+  { label: 'Waarom zijn er dag en nacht?' },
+  { label: 'Hoe weet je of iets levend is?' },
 ]
