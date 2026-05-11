@@ -7,14 +7,24 @@ import { ExamplePrompts } from './components/ExamplePrompts'
 import { HistorySheet } from './components/HistorySheet'
 import { LiveWaveform } from './components/LiveWaveform'
 import { QuestionAffordance } from './components/QuestionAffordance'
+import { TafelsSetup } from './components/TafelsSetup'
+import { TafelsGame } from './components/TafelsGame'
+import { TafelsScore } from './components/TafelsScore'
 import { useTTS } from './hooks/useTTS'
 import { loadHistory, saveItem } from './lib/history'
 import type { HistoryItem } from './lib/history'
 import { BLIEP_PALETTES, PALETTE_BG } from './lib/palettes'
 import type { PaletteName } from './lib/palettes'
 import type { BliepState } from './components/BliepCharacter'
+import {
+  loadTafelsConfig, saveTafelsConfig, buildSession, recordAnswer,
+  formatQuestion, encouragementText, scoreText, TAFELS_STATUS,
+} from './lib/tafels'
+import type { TafelsConfig, TafelsSession } from './lib/tafels'
 
+type AppMode = 'vragen' | 'tafels'
 type Phase = BliepState | 'result'
+           | 'tafels-keuze' | 'tafels-vraag' | 'tafels-goed' | 'tafels-fout' | 'tafels-klaar'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 interface AskResponse { answer: string | null; topic: string | null; question?: string | null }
@@ -46,6 +56,10 @@ export default function App() {
     setPaletteName(name)
     localStorage.setItem('bliep-theme', name)
   }, [])
+
+  const [appMode, setAppMode] = useState<AppMode>('vragen')
+  const [tafelsConfig, setTafelsConfig] = useState<TafelsConfig>(() => loadTafelsConfig())
+  const [tafelsSession, setTafelsSession] = useState<TafelsSession | null>(null)
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [hasInteracted, setHasInteracted] = useState(false)
@@ -289,20 +303,77 @@ export default function App() {
     tts.speak(answer, () => setPhase('result'))
   }, [answer, tts])
 
+  const handleModeSwitch = useCallback((mode: AppMode) => {
+    tts.stop()
+    abortRecording()
+    setAppMode(mode)
+    if (mode === 'tafels') {
+      setPhase('tafels-keuze')
+    } else {
+      setPhase('idle')
+      setQuestion('')
+      setAnswer('')
+      setPillOpen(false)
+    }
+  }, [tts, abortRecording])
 
-  const bliepState: BliepState = phase === 'result' ? 'idle' : phase as BliepState
-  const showQuestionAffordance = phase !== 'idle' && phase !== 'listening' && question
-  const showSubtitle = !hasInteracted && !threadTopic
-  const showExamples = phase === 'idle' && !threadTopic && !hasInteracted
+  const handleTafelsToggle = useCallback((tafel: number) => {
+    setTafelsConfig(prev => {
+      const next: TafelsConfig = prev.selectedTafels.includes(tafel)
+        ? { selectedTafels: prev.selectedTafels.filter(t => t !== tafel) }
+        : { selectedTafels: [...prev.selectedTafels, tafel] }
+      saveTafelsConfig(next)
+      return next
+    })
+  }, [])
 
-  const statusText = {
+  const advanceTafels = useCallback((session: TafelsSession) => {
+    if (session.currentIndex >= session.questions.length) {
+      setPhase('tafels-klaar')
+      tts.speak(scoreText(session))
+    } else {
+      setPhase('tafels-vraag')
+      tts.speak(formatQuestion(session.questions[session.currentIndex]))
+    }
+  }, [tts])
+
+  const handleTafelsStart = useCallback(() => {
+    const session = buildSession(tafelsConfig.selectedTafels)
+    setTafelsSession(session)
+    setPhase('tafels-vraag')
+    tts.speak(formatQuestion(session.questions[0]))
+  }, [tafelsConfig, tts])
+
+  const handleTafelsAnswer = useCallback((givenAnswer: number) => {
+    if (!tafelsSession) return
+    const q = tafelsSession.questions[tafelsSession.currentIndex]
+    const { isCorrect, nextSession } = recordAnswer(tafelsSession, givenAnswer)
+    setTafelsSession(nextSession)
+    setPhase(isCorrect ? 'tafels-goed' : 'tafels-fout')
+    tts.speak(encouragementText(isCorrect, q), () => advanceTafels(nextSession))
+  }, [tafelsSession, tts, advanceTafels])
+
+  const bliepState: BliepState =
+    phase === 'result' ? 'idle' :
+    phase === 'tafels-vraag' ? 'idle' :
+    phase === 'tafels-goed' ? 'speaking' :
+    phase === 'tafels-fout' ? 'confused' :
+    phase === 'tafels-keuze' || phase === 'tafels-klaar' ? 'idle' :
+    phase as BliepState
+  const isTafelsPhase = appMode === 'tafels'
+  const showQuestionAffordance = !isTafelsPhase && phase !== 'idle' && phase !== 'listening' && question
+  const showSubtitle = !hasInteracted && !threadTopic && !isTafelsPhase
+  const showExamples = phase === 'idle' && !threadTopic && !hasInteracted && !isTafelsPhase
+
+  const vragenStatusText: Record<string, string> = {
     idle:      hasInteracted || threadTopic ? 'Ik wacht op je vraag…' : 'Hoi! Wat wil je weten?',
     listening: 'Ik luister naar je…',
     thinking:  'Even nadenken…',
     speaking:  'Hier is je antwoord!',
     confused:  'Oeps… dat weet ik even niet',
     result:    'Ik ben er nog!',
-  }[phase]
+  }
+  const statusText = TAFELS_STATUS[phase] ?? vragenStatusText[phase]
 
   return (
     <div style={{
@@ -378,13 +449,38 @@ export default function App() {
         </div>
       </div>
 
+      {/* Mode tabs */}
+      <div style={{
+        position: 'relative', zIndex: 2,
+        padding: '8px 22px 0',
+        display: 'flex', gap: 8,
+      }}>
+        {(['vragen', 'tafels'] as AppMode[]).map(mode => {
+          const active = appMode === mode
+          const label = mode === 'vragen' ? '🎤 Vragen' : '✖ Tafels'
+          return (
+            <button key={mode} onClick={() => handleModeSwitch(mode)} style={{
+              padding: '6px 16px', borderRadius: 999, border: 'none', cursor: 'pointer',
+              fontFamily: '"Nunito", system-ui', fontSize: 13.5, fontWeight: 800,
+              background: active ? c.blue : 'transparent',
+              color: active ? '#fff' : c.deepBlue,
+              opacity: active ? 1 : 0.55,
+              boxShadow: active ? `0 2px 8px ${c.blue}44` : 'none',
+              transition: 'background 0.15s, color 0.15s, opacity 0.15s',
+            }} aria-pressed={active}>
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Topic chip */}
       <div style={{
         position: 'relative', zIndex: 2,
         padding: '4px 22px 0', minHeight: 38,
         display: 'flex', justifyContent: 'flex-start',
       }}>
-        {threadTopic && (
+        {threadTopic && !isTafelsPhase && (
           <TopicChip topic={threadTopic} turns={threadTurns} c={c} bg={bg} onClear={clearThread} />
         )}
       </div>
@@ -441,29 +537,62 @@ export default function App() {
           </div>
         )}
 
-        {/* Answer / examples */}
-        <div style={{ width: '100%', minHeight: 76, marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, padding: '0 4px' }}>
-          {(phase === 'speaking' || phase === 'result' || phase === 'confused') && answer && (
-            <AnswerBubble
-              text={answer}
-              isSpeaking={phase === 'speaking'}
-              isConfused={phase === 'confused'}
-              c={c}
-              onReplay={handleReplay}
-            />
-          )}
-          {showExamples && (
-            <ExamplePrompts c={c} bg={bg} onPick={handleExamplePick} />
-          )}
-        </div>
+        {/* Answer / examples (vragen mode only) */}
+        {!isTafelsPhase && (
+          <div style={{ width: '100%', minHeight: 76, marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, padding: '0 4px' }}>
+            {(phase === 'speaking' || phase === 'result' || phase === 'confused') && answer && (
+              <AnswerBubble
+                text={answer}
+                isSpeaking={phase === 'speaking'}
+                isConfused={phase === 'confused'}
+                c={c}
+                onReplay={handleReplay}
+              />
+            )}
+            {showExamples && (
+              <ExamplePrompts c={c} bg={bg} onPick={handleExamplePick} />
+            )}
+          </div>
+        )}
+
+        {/* Tafeltjes mode */}
+        {isTafelsPhase && (
+          <div style={{ width: '100%', marginTop: 10, padding: '0 4px' }}>
+            {phase === 'tafels-keuze' && (
+              <TafelsSetup
+                selectedTafels={tafelsConfig.selectedTafels}
+                onToggle={handleTafelsToggle}
+                onStart={handleTafelsStart}
+                c={c} bg={bg}
+              />
+            )}
+            {(phase === 'tafels-vraag' || phase === 'tafels-goed' || phase === 'tafels-fout') && tafelsSession && (
+              <TafelsGame
+                session={tafelsSession}
+                phase={phase}
+                onAnswer={handleTafelsAnswer}
+                c={c} bg={bg}
+              />
+            )}
+            {phase === 'tafels-klaar' && tafelsSession && (
+              <TafelsScore
+                session={tafelsSession}
+                onReplay={handleTafelsStart}
+                onChangeSetup={() => setPhase('tafels-keuze')}
+                c={c} bg={bg}
+              />
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Mic button area */}
+      {/* Mic button area (vragen mode only) */}
+      {!isTafelsPhase && (
       <div style={{
         position: 'relative', zIndex: 2, padding: '0 24px 8px',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
       }}>
-        <MicButton phase={phase} c={c} onClick={handleMicClick} />
+        <MicButton phase={phase as BliepState | 'result'} c={c} onClick={handleMicClick} />
 
         {(phase === 'result' || phase === 'confused') && threadTopic && (
           <button onClick={clearThread} style={{
@@ -480,6 +609,7 @@ export default function App() {
           </button>
         )}
       </div>
+      )}
 
       {/* Footer */}
       <div style={{
