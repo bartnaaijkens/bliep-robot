@@ -22,7 +22,7 @@ Built as a PWA so it can be added to the phone home screen and shared with class
 | Hosting | Cloudflare Pages (free tier) |
 | API proxy | Cloudflare Pages Functions |
 | AI | OpenAI `gpt-4o-mini` |
-| Voice in | Web Speech API (`SpeechRecognition`, nl-NL) |
+| Voice in | Browser `MediaRecorder` + OpenAI transcription (`gpt-4o-mini-transcribe`, nl) |
 | Voice out | Web Speech API (`SpeechSynthesis`, nl-NL) |
 | History | `localStorage` — no database |
 | PWA | `vite-plugin-pwa` + Web App Manifest |
@@ -35,7 +35,6 @@ The OpenAI API key lives only in a Cloudflare Pages secret and is never included
 ├── src/
 │   ├── components/       # UI components (BliepCharacter, MicButton, AnswerBubble, …)
 │   ├── hooks/
-│   │   ├── useSpeechRecognition.ts
 │   │   └── useTTS.ts
 │   ├── lib/
 │   │   ├── history.ts    # localStorage helpers
@@ -89,7 +88,7 @@ Alternatively, connect the repository to Cloudflare Pages via the dashboard for 
 
 ## Browser support
 
-Voice input (`SpeechRecognition`) requires Chrome, Edge, or Safari. The app shows a friendly message if the browser does not support it. Voice output (`SpeechSynthesis`) works in all modern browsers.
+Voice input requires `MediaRecorder` and microphone access (supported in modern Chrome, Edge, and Safari). Voice output (`SpeechSynthesis`) works in all modern browsers.
 
 ## Security
 

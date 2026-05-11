@@ -12,12 +12,19 @@ interface RequestBody {
   history: Message[]
 }
 
-const SYSTEM_PROMPT = `Je bent Bliep, een vrolijke robot die vragen van kinderen beantwoordt.
-Geef duidelijke, begrijpelijke antwoorden van 3-4 zinnen.
-Gebruik eenvoudige woorden en wees enthousiast.
-Antwoord ALTIJD in het Nederlands.
+interface AskResponse {
+  answer: string | null
+  topic: string | null
+  question: string | null
+}
+
+const SYSTEM_PROMPT = `Je bent Bliep, een vrolijke en nieuwsgierige robot die vragen van kinderen beantwoordt.
+Geef altijd korte antwoorden van 3-4 zinnen in eenvoudige woorden die een kind van 7 jaar begrijpt.
+Wees enthousiast en maak antwoorden levendig.
+Antwoord ALTIJD in het Nederlands, ook als de vraag in een andere taal is gesteld.
+Ga niet in op enge, gewelddadige of ongepaste onderwerpen — zeg dan vriendelijk: "Daar praat ik liever niet over. Heb je een andere vraag?"
 Geef je antwoord als JSON met exact deze twee velden: {"answer": "...", "topic": "1-2 woorden in het Nederlands"}
-Als je het antwoord niet weet, geef dan: {"answer": "Hmm, dat weet ik even niet — vraag het nog eens met andere woorden?", "topic": null}`
+Als je het antwoord niet weet: {"answer": "Dat weet ik even niet — vraag het nog eens met andere woorden?", "topic": null}`
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   // Only accept requests from the app's own origin
@@ -30,25 +37,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return new Response('Forbidden', { status: 403 })
   }
 
-  let body: RequestBody
-  try {
-    body = await context.request.json<RequestBody>()
-  } catch {
-    return Response.json({ error: 'Invalid JSON' }, { status: 400 })
-  }
+  const sanitizeHistory = (history: Message[]): Array<{ role: 'user' | 'assistant', content: string }> =>
+    history
+      .filter((m): m is Message & { role: 'user' | 'assistant' } => m.role === 'user' || m.role === 'assistant')
+      .slice(-6)
+      .map(m => ({ role: m.role, content: String(m.content).slice(0, 1000) }))
 
-  const { question, history = [] } = body
-
-  if (!question || typeof question !== 'string' || question.length > 500) {
-    return Response.json({ error: 'Invalid question' }, { status: 400 })
-  }
-
-  const safeHistory = history
-    .filter(m => m.role === 'user' || m.role === 'assistant')
-    .slice(-6)
-    .map(m => ({ role: m.role, content: String(m.content).slice(0, 1000) }))
-
-  try {
+  const askWithContext = async (question: string, safeHistory: Array<{ role: 'user' | 'assistant', content: string }>): Promise<AskResponse> => {
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -70,8 +65,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     if (!openaiRes.ok) {
       const err = await openaiRes.text()
-      console.error('OpenAI error:', openaiRes.status, err)
-      return Response.json({ answer: null, topic: null }, { status: 502 })
+      console.error('OpenAI chat error:', openaiRes.status, err)
+      return { answer: null, topic: null, question }
     }
 
     const data = await openaiRes.json<{
@@ -83,9 +78,80 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       topic: string | null
     }
 
-    return Response.json({ answer: parsed.answer ?? null, topic: parsed.topic ?? null })
+    return { answer: parsed.answer ?? null, topic: parsed.topic ?? null, question }
+  }
+
+  try {
+    const contentType = context.request.headers.get('content-type') ?? ''
+
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await context.request.formData()
+      const audio = formData.get('audio') as unknown as File | null
+      const historyRaw = formData.get('history')
+
+      if (!audio || audio.size === 0) {
+        return Response.json({ error: 'Invalid audio' }, { status: 400 })
+      }
+
+      let parsedHistory: Message[] = []
+      if (typeof historyRaw === 'string' && historyRaw.trim()) {
+        try {
+          parsedHistory = JSON.parse(historyRaw) as Message[]
+        } catch {
+          parsedHistory = []
+        }
+      }
+
+      const transcriptionForm = new FormData()
+      const fileType = audio.type || 'audio/webm'
+      transcriptionForm.append('file', new File([audio], 'question.webm', { type: fileType }))
+      transcriptionForm.append('model', 'gpt-4o-mini-transcribe')
+      transcriptionForm.append('language', 'nl')
+
+      const transcriptionRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${context.env.OPENAI_API_KEY}`,
+        },
+        body: transcriptionForm,
+      })
+
+      if (!transcriptionRes.ok) {
+        const err = await transcriptionRes.text()
+        console.error('OpenAI transcription error:', transcriptionRes.status, err)
+        return Response.json({ answer: null, topic: null, question: null }, { status: 502 })
+      }
+
+      const transcriptionData = await transcriptionRes.json<{ text?: string }>()
+      const question = String(transcriptionData.text ?? '').trim().slice(0, 500)
+
+      if (!question) {
+        return Response.json({ answer: null, topic: null, question: null }, { status: 400 })
+      }
+
+      const safeHistory = sanitizeHistory(parsedHistory)
+      const response = await askWithContext(question, safeHistory)
+      return Response.json(response)
+    }
+
+    let body: RequestBody
+    try {
+      body = await context.request.json<RequestBody>()
+    } catch {
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+    }
+
+    const { question, history = [] } = body
+
+    if (!question || typeof question !== 'string' || question.length > 500) {
+      return Response.json({ error: 'Invalid question' }, { status: 400 })
+    }
+
+    const safeHistory = sanitizeHistory(history)
+    const response = await askWithContext(question, safeHistory)
+    return Response.json(response)
   } catch (err) {
     console.error('ask function error:', err)
-    return Response.json({ answer: null, topic: null }, { status: 500 })
+    return Response.json({ answer: null, topic: null, question: null }, { status: 500 })
   }
 }

@@ -7,7 +7,6 @@ import { ExamplePrompts } from './components/ExamplePrompts'
 import { HistorySheet } from './components/HistorySheet'
 import { LiveWaveform } from './components/LiveWaveform'
 import { QuestionAffordance } from './components/QuestionAffordance'
-import { useSpeechRecognition } from './hooks/useSpeechRecognition'
 import { useTTS } from './hooks/useTTS'
 import { loadHistory, saveItem } from './lib/history'
 import type { HistoryItem } from './lib/history'
@@ -17,9 +16,11 @@ import type { BliepState } from './components/BliepCharacter'
 type Phase = BliepState | 'result'
 
 interface Message { role: 'user' | 'assistant'; content: string }
+interface AskResponse { answer: string | null; topic: string | null; question?: string | null }
 
 const PALETTE = 'classic'
-const CONFUSED_ANSWER = 'Hmm, dat weet ik even niet — vraag het nog eens met andere woorden?'
+const CONFUSED_ANSWER = 'Dat weet ik even niet — vraag het nog eens met andere woorden?'
+const RECORDING_ERROR = 'Oeps, Bliep kon even niet luisteren. Probeer het zo nog eens!'
 
 export default function App() {
   const c = BLIEP_PALETTES[PALETTE]
@@ -41,70 +42,24 @@ export default function App() {
 
   const tts = useTTS()
   const listenStartRef = useRef<number>(0)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const shouldProcessStopRef = useRef(false)
 
-  const handleSpeechResult = useCallback((transcript: string) => {
-    console.log('[app] handleSpeechResult', JSON.stringify(transcript))
-    const elapsed = Math.round((Date.now() - listenStartRef.current) / 1000)
-    setDuration(Math.max(1, elapsed))
-    setQuestion(transcript)
-    setPhase('thinking')
-    tts.stop()
+  const recordingSupported = typeof window !== 'undefined'
+    && typeof MediaRecorder !== 'undefined'
+    && !!navigator.mediaDevices?.getUserMedia
 
-    const contextMessages = threadMessages.slice(-6)
-    fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: transcript, history: contextMessages }),
-    })
-      .then(r => { console.log('[app] /api/ask status', r.status); return r.json() })
-      .then((data: { answer: string; topic: string | null }) => {
-        const responseText = data.answer ?? CONFUSED_ANSWER
-        const topic = data.topic ?? null
-        const isConfused = !data.answer || data.answer === CONFUSED_ANSWER
-
-        setAnswer(responseText)
-        setPhase('speaking')
-
-        tts.speak(responseText, () => setPhase('result'))
-
-        if (!isConfused) {
-          setThreadTopic(prev => prev ?? topic)
-          setThreadTurns(n => n + 1)
-          const newMessages: Message[] = [
-            ...threadMessages,
-            { role: 'user', content: transcript },
-            { role: 'assistant', content: responseText },
-          ]
-          setThreadMessages(newMessages)
-
-          const item: HistoryItem = {
-            q: transcript, a: responseText,
-            topic: topic ?? 'Algemeen', ts: Date.now(),
-          }
-          saveItem(item)
-          setHistory(loadHistory())
-        } else {
-          setPhase('confused')
-        }
-      })
-      .catch(err => {
-        console.log('[app] /api/ask failed', err)
-        setAnswer(CONFUSED_ANSWER)
-        setPhase('confused')
-        tts.speak(CONFUSED_ANSWER, () => setPhase('result'))
-      })
-  }, [threadMessages, tts])
-
-  const handleSpeechError = useCallback((error: string) => {
-    console.log('[app] onError', error)
+  const handleRecordingError = useCallback((error: string) => {
+    console.log('[app] recording error', error)
     let message: string
     if (error === 'not-allowed' || error === 'service-not-allowed') {
       message = 'Bliep mag de microfoon niet gebruiken. Sta het toe in je browser.'
     } else if (error === 'audio-capture') {
       message = 'Bliep kon de microfoon niet vinden.'
     } else {
-      // 'network' and anything else
-      message = 'Oeps, Bliep kon even niet luisteren. Probeer het zo nog eens!'
+      message = RECORDING_ERROR
     }
     setQuestion('')
     setAnswer(message)
@@ -112,27 +67,147 @@ export default function App() {
     tts.speak(message, () => setPhase('result'))
   }, [tts])
 
-  const { partial, supported: sttSupported, start: startListening, stop: stopListening, abort: abortListening } = useSpeechRecognition({
-    onResult: handleSpeechResult,
-    onEndWithoutResult: useCallback(() => { console.log('[app] onEndWithoutResult -> idle'); setPhase('idle') }, []),
-    onError: handleSpeechError,
-  })
+  const cleanupRecorderResources = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    recorderRef.current = null
+    chunksRef.current = []
+  }, [])
+
+  const handleAskResponse = useCallback((spokenQuestion: string, data: AskResponse) => {
+    const responseText = data.answer ?? CONFUSED_ANSWER
+    const topic = data.topic ?? null
+    const isConfused = !data.answer || data.answer === CONFUSED_ANSWER
+
+    setQuestion(spokenQuestion)
+    setAnswer(responseText)
+    setPhase('speaking')
+    tts.speak(responseText, () => setPhase('result'))
+
+    if (!isConfused) {
+      setThreadTopic(prev => prev ?? topic)
+      setThreadTurns(n => n + 1)
+      const newMessages: Message[] = [
+        ...threadMessages,
+        { role: 'user', content: spokenQuestion },
+        { role: 'assistant', content: responseText },
+      ]
+      setThreadMessages(newMessages)
+      saveItem({ q: spokenQuestion, a: responseText, topic: topic ?? 'Algemeen', ts: Date.now() })
+      setHistory(loadHistory())
+    } else {
+      setPhase('confused')
+    }
+  }, [threadMessages, tts])
+
+  const processRecordedAudio = useCallback((audioBlob: Blob) => {
+    const elapsed = Math.round((Date.now() - listenStartRef.current) / 1000)
+    setDuration(Math.max(1, elapsed))
+    setPhase('thinking')
+    tts.stop()
+
+    const contextMessages = threadMessages.slice(-6)
+    const formData = new FormData()
+    formData.append('audio', audioBlob, 'question.webm')
+    formData.append('history', JSON.stringify(contextMessages))
+
+    fetch('/api/ask', {
+      method: 'POST',
+      body: formData,
+    })
+      .then(r => { console.log('[app] /api/ask status', r.status); return r.json() })
+      .then((data: AskResponse) => {
+        const spokenQuestion = String(data.question ?? '').trim()
+        if (!spokenQuestion) throw new Error('no-transcript')
+        handleAskResponse(spokenQuestion, data)
+      })
+      .catch(err => {
+        console.log('[app] /api/ask failed', err)
+        setQuestion('')
+        setAnswer(CONFUSED_ANSWER)
+        setPhase('confused')
+        tts.speak(CONFUSED_ANSWER, () => setPhase('result'))
+      })
+  }, [handleAskResponse, threadMessages, tts])
+
+  const startRecording = useCallback(async () => {
+    if (!recordingSupported) {
+      handleRecordingError('audio-capture')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+      const mimeType = mimeCandidates.find(type => MediaRecorder.isTypeSupported(type))
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+
+      streamRef.current = stream
+      recorderRef.current = recorder
+      chunksRef.current = []
+      shouldProcessStopRef.current = true
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data)
+      }
+
+      recorder.onerror = () => {
+        cleanupRecorderResources()
+        handleRecordingError('audio-capture')
+      }
+
+      recorder.onstop = () => {
+        const processResult = shouldProcessStopRef.current
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        cleanupRecorderResources()
+        if (!processResult) return
+        if (blob.size < 1024) {
+          setPhase('idle')
+          return
+        }
+        processRecordedAudio(blob)
+      }
+
+      listenStartRef.current = Date.now()
+      recorder.start()
+      setPhase('listening')
+    } catch {
+      handleRecordingError('not-allowed')
+    }
+  }, [cleanupRecorderResources, handleRecordingError, processRecordedAudio, recordingSupported])
+
+  const stopRecording = useCallback(() => {
+    const recorder = recorderRef.current
+    if (!recorder) return
+    shouldProcessStopRef.current = true
+    if (recorder.state !== 'inactive') recorder.stop()
+  }, [])
+
+  const abortRecording = useCallback(() => {
+    const recorder = recorderRef.current
+    shouldProcessStopRef.current = false
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop()
+      return
+    }
+    cleanupRecorderResources()
+  }, [cleanupRecorderResources])
 
   const handleMicClick = useCallback(() => {
-    console.log('[app] mic click, phase=', phase, 'partial=', JSON.stringify(partial))
+    console.log('[app] mic click, phase=', phase)
     if (phase === 'idle' || phase === 'result' || phase === 'confused') {
       tts.stop()
       setHasInteracted(true)
       setQuestion('')
       setAnswer('')
       setPillOpen(false)
-      setPhase('listening')
-      listenStartRef.current = Date.now()
-      startListening()
+      void startRecording()
     } else if (phase === 'listening') {
-      stopListening()
+      stopRecording()
     }
-  }, [phase, partial, startListening, stopListening, tts])
+  }, [phase, startRecording, stopRecording, tts])
 
   const handleExamplePick = useCallback((label: string) => {
     setHasInteracted(true)
@@ -148,12 +223,13 @@ export default function App() {
       body: JSON.stringify({ question: label, history: [] }),
     })
       .then(r => r.json())
-      .then((data: { answer: string; topic: string | null }) => {
+      .then((data: AskResponse) => {
+        setDuration(Math.ceil(label.length / 12))
         const responseText = data.answer ?? CONFUSED_ANSWER
         const topic = data.topic ?? null
+        setQuestion(label)
         setAnswer(responseText)
         setPhase('speaking')
-        setDuration(Math.ceil(label.length / 12))
         tts.speak(responseText, () => setPhase('result'))
         setThreadTopic(topic)
         setThreadTurns(1)
@@ -173,14 +249,12 @@ export default function App() {
 
   const goIdle = useCallback(() => {
     tts.stop()
-    // Hard reset — using stop() here would leave a flush in flight whose
-    // callbacks could later override the 'idle' phase we set below.
-    abortListening()
+    abortRecording()
     setPhase('idle')
     setQuestion('')
     setAnswer('')
     setPillOpen(false)
-  }, [tts, abortListening])
+  }, [tts, abortRecording])
 
   const clearThread = useCallback(() => {
     setThreadTopic(null)
@@ -284,16 +358,7 @@ export default function App() {
         {/* Question area */}
         <div style={{ width: '100%', minHeight: 64, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
           {phase === 'listening' && (
-            <div>
-              <LiveWaveform c={c} />
-              {partial && (
-                <div style={{
-                  marginTop: 4, padding: '4px 10px',
-                  fontFamily: '"Nunito", system-ui', fontSize: 13.5, fontWeight: 600,
-                  color: c.deepBlue, opacity: 0.7, textAlign: 'center',
-                }}>{partial}</div>
-              )}
-            </div>
+            <div><LiveWaveform c={c} /></div>
           )}
           {showQuestionAffordance && (
             <QuestionAffordance
@@ -323,15 +388,15 @@ export default function App() {
           letterSpacing: 0.3, textAlign: 'center', lineHeight: 1.1,
         }}>{statusText}</div>
 
-        {/* STT not supported warning */}
-        {!sttSupported && phase === 'idle' && (
+        {/* Recording not supported warning */}
+        {!recordingSupported && phase === 'idle' && (
           <div style={{
             marginTop: 6, padding: '6px 14px',
             background: '#fff3cd', borderRadius: 10,
             fontFamily: '"Nunito", system-ui', fontSize: 12.5, fontWeight: 700,
             color: '#856404', textAlign: 'center',
           }}>
-            Spraakherkenning werkt niet in deze browser. Probeer Chrome of Safari.
+            Opnemen werkt niet in deze browser. Probeer Chrome, Edge of Safari.
           </div>
         )}
 

@@ -16,9 +16,10 @@ npm run deploy       # build + wrangler pages deploy dist
 ## Architecture
 
 - **Frontend**: `src/` — React 19 SPA, no router, single `App.tsx` state machine
-- **Backend**: `functions/api/ask.ts` — Cloudflare Pages Function, proxies to OpenAI
+- **Backend**: `functions/api/ask.ts` — Cloudflare Pages Function, handles audio transcription + answer generation via OpenAI
 - **History**: `localStorage` only — no database, no auth
-- **Voice**: Web Speech API throughout (SpeechRecognition + SpeechSynthesis, lang `nl-NL`)
+- **Voice in**: Browser `MediaRecorder` capture, transcribed server-side by OpenAI (`gpt-4o-mini-transcribe`, language `nl`)
+- **Voice out**: Web Speech API `SpeechSynthesis` (`nl-NL`)
 
 ## Phase state machine
 
@@ -33,23 +34,11 @@ idle → listening → thinking → speaking → result
 
 | File | Purpose |
 |---|---|
-| `src/App.tsx` | All app state, phase transitions, fetch call |
-| `src/hooks/useSpeechRecognition.ts` | Web Speech API wrapper — per-session closure pattern (important: see note below) |
+| `src/App.tsx` | All app state, phase transitions, audio recording, fetch calls |
 | `src/hooks/useTTS.ts` | SpeechSynthesis wrapper |
 | `src/lib/palettes.ts` | Colour constants — `BLIEP_PALETTES` (character) + `PALETTE_BG` (background) |
 | `src/lib/history.ts` | localStorage read/write, `relativeTime()` helper |
-| `functions/api/ask.ts` | OpenAI proxy — reads `OPENAI_API_KEY` from env, validates origin |
-
-## useSpeechRecognition — why it's written the way it is
-
-The hook uses a **per-session closure pattern** rather than shared refs. Each `start()` call creates fresh `lastPartial` and `ended` closure variables for that session. Every event handler checks `recognitionRef.current !== recognition` to confirm it belongs to the active session before doing anything.
-
-This solves three Chrome-specific quirks:
-1. `onend` fires after `onerror` (both must be handled, only once)
-2. Chrome often ends a session with only interim results, never promoting to final — `lastPartial` is used as a fallback
-3. Aborting a previous session fires its `onend` asynchronously — the identity check ignores it
-
-Do not simplify this to shared flags; it will reintroduce the per-session cross-contamination bug.
+| `functions/api/ask.ts` | OpenAI gateway — validates origin, transcribes uploaded audio, generates Dutch answer/topic |
 
 ## Secrets and environment
 
@@ -65,6 +54,6 @@ The visual design was prototyped in Claude Design (`design-extract/` in `.gitign
 
 - No database — history in `localStorage`, capped at 50 items
 - No auth — the app is intentionally public and shareable
-- Dutch language throughout (`nl-NL`) — copy, TTS, STT, and LLM system prompt
+- Dutch language throughout — copy, TTS (`nl-NL`), transcription (`nl`), and LLM system prompt
 - Keep answers short (3–4 sentences) — target audience is 7-year-olds
 - Free Cloudflare tier — do not add services that incur cost (KV, D1, R2, etc.)
