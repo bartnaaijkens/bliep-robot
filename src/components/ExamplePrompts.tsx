@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { BliepPalette, BgPalette } from '../lib/palettes'
 import { EXAMPLE_PROMPTS } from '../lib/palettes'
 
@@ -8,6 +9,10 @@ interface Props {
 }
 
 export function ExamplePrompts({ c, bg: _bg, onPick }: Props) {
+  const picks = useMemo(() =>
+    [...EXAMPLE_PROMPTS].sort(() => Math.random() - 0.5).slice(0, 5)
+  , [])
+
   return (
     <div style={{
       width: '100%', display: 'flex', flexWrap: 'wrap', gap: 6,
@@ -20,7 +25,7 @@ export function ExamplePrompts({ c, bg: _bg, onPick }: Props) {
         fontFamily: '"Patrick Hand", cursive', fontSize: 15,
         color: c.deepBlue, opacity: 0.55, marginBottom: 2,
       }}>probeer bijvoorbeeld:</div>
-      {EXAMPLE_PROMPTS.map((p, i) => (
+      {picks.map((p, i) => (
         <button key={i} onClick={() => onPick(p.label)} style={{
           border: `1.5px solid ${c.blue}55`, background: '#fff',
           borderRadius: 999, padding: '6px 12px',
