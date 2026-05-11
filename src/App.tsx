@@ -275,12 +275,12 @@ export default function App() {
   const showExamples = phase === 'idle' && !threadTopic && !hasInteracted
 
   const statusText = {
-    idle:      threadTopic ? 'Tik om verder te praten' : (hasInteracted ? 'Tik om te praten' : 'Hoi! Wat wil je weten?'),
+    idle:      hasInteracted || threadTopic ? 'Ik wacht op je vraag…' : 'Hoi! Wat wil je weten?',
     listening: 'Ik luister naar je…',
     thinking:  'Even nadenken…',
     speaking:  'Hier is je antwoord!',
-    confused:  'Oeps… dat weet ik niet',
-    result:    'Nog een vraag?',
+    confused:  'Oeps… dat weet ik even niet',
+    result:    'Ik ben er nog!',
   }[phase]
 
   return (
@@ -309,7 +309,7 @@ export default function App() {
 
       {/* Header */}
       <div style={{
-        position: 'relative', zIndex: 2, padding: '8px 22px 0',
+        position: 'relative', zIndex: 2, padding: '4px 22px 0',
         display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
       }}>
         <div>
@@ -340,7 +340,7 @@ export default function App() {
       {/* Topic chip */}
       <div style={{
         position: 'relative', zIndex: 2,
-        padding: '16px 22px 0', minHeight: 38,
+        padding: '4px 22px 0', minHeight: 38,
         display: 'flex', justifyContent: 'flex-start',
       }}>
         {threadTopic && (
@@ -353,7 +353,7 @@ export default function App() {
         position: 'relative', zIndex: 2, flex: 1,
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'flex-start',
-        padding: '6px 18px 0',
+        padding: '0 18px 0',
       }}>
         {/* Question area */}
         <div style={{ width: '100%', minHeight: 64, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
@@ -419,23 +419,10 @@ export default function App() {
 
       {/* Mic button area */}
       <div style={{
-        position: 'relative', zIndex: 2, padding: '0 24px 16px',
+        position: 'relative', zIndex: 2, padding: '0 24px 8px',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
       }}>
         <MicButton phase={phase} c={c} onClick={handleMicClick} />
-
-        <div style={{
-          marginTop: 10, minHeight: 22,
-          fontFamily: '"Patrick Hand", cursive',
-          fontSize: 17, color: c.deepBlue, opacity: 0.55,
-          textAlign: 'center',
-        }}>
-          {phase === 'idle' && (threadTopic ? 'Tik om verder te praten' : 'Tik op BLIEP')}
-          {phase === 'listening' && 'Tik om te stoppen'}
-          {phase === 'thinking' && 'Bliep denkt na…'}
-          {phase === 'speaking' && 'Bliep praat tegen je'}
-          {(phase === 'result' || phase === 'confused') && 'Tik voor een vervolgvraag'}
-        </div>
 
         {(phase === 'result' || phase === 'confused') && threadTopic && (
           <button onClick={clearThread} style={{
@@ -455,9 +442,11 @@ export default function App() {
 
       {/* Footer */}
       <div style={{
-        position: 'absolute', left: 22, bottom: 'calc(env(safe-area-inset-bottom, 6px) + 2px)',
-        zIndex: 1, fontFamily: '"Patrick Hand", cursive', fontSize: 13,
-        color: c.deepBlue, opacity: 0.45,
+        position: 'relative', zIndex: 2,
+        marginTop: 20, paddingBottom: 14,
+        fontFamily: '"Patrick Hand", cursive', fontSize: 16,
+        color: c.deepBlue, opacity: 0.6,
+        textAlign: 'center',
       }}>Uitgevonden door Zoë ♥</div>
 
       {showSheet && (
