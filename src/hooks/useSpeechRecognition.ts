@@ -17,6 +17,25 @@ interface SpeechRecognitionOptions {
   onError?: (error: string) => void
 }
 
+interface ISpeechRecognitionAlternative {
+  transcript: string
+}
+
+interface ISpeechRecognitionResult {
+  isFinal: boolean
+  [index: number]: ISpeechRecognitionAlternative
+}
+
+interface ISpeechRecognitionResultList {
+  length: number
+  [index: number]: ISpeechRecognitionResult
+}
+
+interface ISpeechRecognitionEvent extends Event {
+  resultIndex: number
+  results: ISpeechRecognitionResultList
+}
+
 interface ISpeechRecognition extends EventTarget {
   lang: string
   continuous: boolean
@@ -28,7 +47,7 @@ interface ISpeechRecognition extends EventTarget {
   onstart: ((ev: Event) => void) | null
   onend: ((ev: Event) => void) | null
   onerror: ((ev: Event) => void) | null
-  onresult: ((ev: SpeechRecognitionEvent) => void) | null
+  onresult: ((ev: ISpeechRecognitionEvent) => void) | null
 }
 
 interface ISpeechRecognitionConstructor {
@@ -61,6 +80,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
   useEffect(() => { onErrorRef.current = onError }, [onError])
 
   const recognitionRef = useRef<ISpeechRecognition | null>(null)
+  const stopRequestedRef = useRef(new WeakMap<ISpeechRecognition, boolean>())
   // Mirror of `partial` for synchronous read inside the watchdog
   const partialRef = useRef('')
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -76,6 +96,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
     log('abort()')
     const r = recognitionRef.current
     if (r) {
+      stopRequestedRef.current.delete(r)
       recognitionRef.current = null
       try { r.abort() } catch { /* ignore */ }
     }
@@ -88,6 +109,8 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
     const r = recognitionRef.current
     log('stop() called, partialRef=', JSON.stringify(partialRef.current), 'recognition?', !!r)
     if (!r) return
+    stopRequestedRef.current.set(r, true)
+    log('stop() mark stopRequested=true')
     try { r.stop() } catch (e) { log('r.stop threw', e) }
 
     // Watchdog for the Chrome bug where neither onresult nor onend fires after stop().
@@ -98,6 +121,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
       const late = partialRef.current.trim()
       log('watchdog fired, late=', JSON.stringify(late))
       recognitionRef.current = null
+      stopRequestedRef.current.delete(r)
       try { r.abort() } catch { /* ignore */ }
       partialRef.current = ''
       setPartial('')
@@ -106,10 +130,23 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
     }, STOP_WATCHDOG_MS)
   }, [])
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     const API = getSpeechRecognitionAPI()
     if (!API) return
     log('start()')
+
+    // iOS Safari does not show a mic permission dialog from SpeechRecognition alone.
+    // Explicitly requesting getUserMedia prompts the user, then we release the stream.
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        stream.getTracks().forEach(t => t.stop())
+      } catch (e) {
+        log('getUserMedia denied', e)
+        onErrorRef.current?.('not-allowed')
+        return
+      }
+    }
 
     // Detach + abort any previous session. Its onend will be ignored via identity check.
     const prev = recognitionRef.current
@@ -125,7 +162,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
     let lastPartial = ''
     let ended = false
 
-    const handleSessionEnd = (cause: string, error?: string) => {
+    const handleSessionEnd = (cause: string, error?: string, treatErrorAsNoResult = false) => {
       if (ended) { log('handleSessionEnd skipped (already ended)', cause); return }
       ended = true
       clearWatchdog()
@@ -136,7 +173,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
       if (fallback) {
         // We have something usable from interim — deliver it even if there was an error.
         onResultRef.current(fallback)
-      } else if (error && error !== 'no-speech' && error !== 'aborted') {
+      } else if (error && error !== 'no-speech' && error !== 'aborted' && !treatErrorAsNoResult) {
         // Real failure: surface to the app so it can show a message.
         onErrorRef.current?.(error)
       } else {
@@ -150,6 +187,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
     recognition.continuous = false
     recognition.interimResults = true
     recognition.maxAlternatives = 1
+    stopRequestedRef.current.delete(recognition)
 
     recognition.onstart = () => {
       if (recognitionRef.current !== recognition) return
@@ -158,7 +196,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
       setPartial('')
     }
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event: ISpeechRecognitionEvent) => {
       if (recognitionRef.current !== recognition) { log('onresult ignored (stale session)'); return }
       let interim = ''
       let final = ''
@@ -177,6 +215,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
         lastPartial = final
         ended = true
         clearWatchdog()
+        stopRequestedRef.current.delete(recognition)
         partialRef.current = ''
         setPartial('')
         onResultRef.current(final.trim())
@@ -186,8 +225,10 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
     recognition.onerror = (ev: Event) => {
       if (recognitionRef.current !== recognition) return
       const errorType = (ev as { error?: string }).error ?? 'unknown'
-      log('onerror', errorType)
-      handleSessionEnd('onerror', errorType)
+      const stopRequested = stopRequestedRef.current.get(recognition) === true
+      log('onerror', errorType, 'stopRequested=', stopRequested)
+      const benignStopError = stopRequested && (errorType === 'network' || errorType === 'aborted' || errorType === 'no-speech')
+      handleSessionEnd('onerror', errorType, benignStopError)
     }
 
     // onend always fires (even after onerror) — `ended` flag prevents double-handling.
@@ -197,6 +238,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
     recognition.onend = () => {
       if (recognitionRef.current !== recognition) return
       log('onend')
+      stopRequestedRef.current.delete(recognition)
       handleSessionEnd('onend')
     }
 
@@ -213,6 +255,7 @@ export function useSpeechRecognition({ onResult, onEndWithoutResult, onError }: 
   useEffect(() => () => {
     const r = recognitionRef.current
     if (r) {
+      stopRequestedRef.current.delete(r)
       recognitionRef.current = null
       try { r.abort() } catch { /* ignore */ }
     }
