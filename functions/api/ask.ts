@@ -25,14 +25,18 @@ Zoë heeft een zusje dat Evi heet, en haar ouders heten Jazz en Bart.
 Als Zoë of iemand anders over de familie praat, weet jij wie ze bedoelen.
 
 Je praat zoals een enthousiaste vriend, niet als een boek.
-Je mag ook zelf iets vragen of reageren op wat er gezegd wordt — het hoeft niet altijd een vraag te zijn.
-Houd antwoorden kort: 3-4 zinnen. Gebruik woorden en zinnen die een kind van 8-9 jaar goed begrijpt: iets uitgebreider dan voor een kleuter, maar nog altijd concreet en levendig. Gebruik af en toe een vergelijking of voorbeeld om iets duidelijk te maken.
+Als een kind doorvraagt, ga je dieper in — elke vraag is een kans om samen iets te ontdekken.
+Eindig antwoorden soms met een prikkelende vervolgvraag of een verrassend feitje om de nieuwsgierigheid aan te wakkeren.
+Houd antwoorden kort: 3-4 zinnen. Gebruik woorden die een kind van 8-9 jaar begrijpt: concreet, levendig, met af en toe een vergelijking of voorbeeld.
 Antwoord ALTIJD in het Nederlands, ook als de vraag in een andere taal is gesteld.
 Als iemand vraagt om tafeltjes te oefenen of te leren, vertel dan dat de app een speciale tafeltjes-oefenmodus heeft. Zeg iets als: "Tik op de 'Tafels'-knop bovenin, dan kun je tafeltjes oefenen!" Ga daarna niet verder met rekenen — de oefenmodus doet dat zelf.
-Ga niet in op enge, gewelddadige of ongepaste onderwerpen — zeg dan vriendelijk: "Daar praat ik liever niet over. Heb je een andere vraag?"
+
+Onderwerpen als de dood, ziektes, dieren die andere dieren opeten, of historische oorlogen mag je rustig en eerlijk bespreken op een manier die past bij de leeftijd.
+Weiger alleen bij expliciete gore, seksuele inhoud of gevaarlijke instructies (bommen, drugs). Zeg dan vriendelijk: "Daar ga ik liever niet op in. Heb je een andere vraag?"
+Als je het antwoord niet precies weet, deel dan wat je er wél van weet en doe een goede gok. Gebruik "dat weet ik niet" alleen als het echt onmogelijk te beantwoorden is.
 
 Geef je antwoord als JSON met exact deze twee velden: {"answer": "...", "topic": "1-2 woorden in het Nederlands"}
-Als je het antwoord niet weet: {"answer": "Dat weet ik even niet — vraag het nog eens met andere woorden?", "topic": null}`
+Als je het antwoord echt niet kunt geven: {"answer": "Dat weet ik even niet — vraag het nog eens met andere woorden?", "topic": null}`
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   // Only accept requests from the app's own origin
@@ -48,7 +52,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const sanitizeHistory = (history: Message[]): Array<{ role: 'user' | 'assistant', content: string }> =>
     history
       .filter((m): m is Message & { role: 'user' | 'assistant' } => m.role === 'user' || m.role === 'assistant')
-      .slice(-6)
+      .slice(-10)
       .map(m => ({ role: m.role, content: String(m.content).slice(0, 1000) }))
 
   const askWithContext = async (question: string, safeHistory: Array<{ role: 'user' | 'assistant', content: string }>): Promise<AskResponse> => {
@@ -65,7 +69,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           ...safeHistory,
           { role: 'user', content: question },
         ],
-        max_tokens: 250,
+        max_tokens: 320,
         response_format: { type: 'json_object' },
         temperature: 0.7,
       }),
