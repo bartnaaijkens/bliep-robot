@@ -1,16 +1,16 @@
 import type { BliepPalette, BgPalette } from '../lib/palettes'
-import { ALL_TAFELS } from '../lib/tafels'
+import { ALL_TABLES } from '../lib/tables'
 
 interface Props {
-  selectedTafels: number[]
-  onToggle: (tafel: number) => void
+  selectedTables: number[]
+  onToggle: (table: number) => void
   onStart: () => void
   c: BliepPalette
   bg: BgPalette
 }
 
-export function TafelsSetup({ selectedTafels, onToggle, onStart, c, bg }: Props) {
-  const canStart = selectedTafels.length > 0
+export function TablesSetup({ selectedTables, onToggle, onStart, c, bg }: Props) {
+  const canStart = selectedTables.length > 0
 
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, paddingTop: 8 }}>
@@ -25,8 +25,8 @@ export function TafelsSetup({ selectedTafels, onToggle, onStart, c, bg }: Props)
         display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
         gap: 10, width: '100%', maxWidth: 280,
       }}>
-        {ALL_TAFELS.map(t => {
-          const selected = selectedTafels.includes(t)
+        {ALL_TABLES.map(t => {
+          const selected = selectedTables.includes(t)
           return (
             <button
               key={t}

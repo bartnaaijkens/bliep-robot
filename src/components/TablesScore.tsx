@@ -1,15 +1,15 @@
 import type { BliepPalette, BgPalette } from '../lib/palettes'
-import type { TafelsSession } from '../lib/tafels'
+import type { TablesSession } from '../lib/tables'
 
 interface Props {
-  session: TafelsSession
+  session: TablesSession
   onReplay: () => void
   onChangeSetup: () => void
   c: BliepPalette
   bg: BgPalette
 }
 
-export function TafelsScore({ session, onReplay, onChangeSetup, c, bg }: Props) {
+export function TablesScore({ session, onReplay, onChangeSetup, c, bg }: Props) {
   const pct = session.correct / session.questions.length
   const stars = pct >= 0.9 ? 3 : pct >= 0.7 ? 2 : 1
 

@@ -1,23 +1,22 @@
 import { useState, useEffect } from 'react'
 import type { BliepPalette, BgPalette } from '../lib/palettes'
-import type { TafelsSession } from '../lib/tafels'
+import type { TablesSession } from '../lib/tables'
 
 interface Props {
-  session: TafelsSession
+  session: TablesSession
   phase: string
   onAnswer: (n: number) => void
   c: BliepPalette
   bg: BgPalette
 }
 
-export function TafelsGame({ session, phase, onAnswer, c, bg }: Props) {
+export function TablesGame({ session, phase, onAnswer, c, bg }: Props) {
   const [input, setInput] = useState('')
-  const active = phase === 'tafels-vraag'
+  const active = phase === 'tables-question'
   const q = session.questions[Math.min(session.currentIndex, session.questions.length - 1)]
   const total = session.questions.length
   const progress = session.currentIndex / total
 
-  // Reset input when a new question starts
   useEffect(() => {
     if (active) setInput('')
   }, [session.currentIndex, active])
@@ -89,21 +88,20 @@ export function TafelsGame({ session, phase, onAnswer, c, bg }: Props) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, width: '100%', maxWidth: 260 }}>
         {KEYS.map(k => (
           <button key={k} onClick={() => pressDigit(k)} disabled={!active}
-            style={numKey(c, bg, active)}>
+            style={numKeyStyle(c, bg, active)}>
             {k}
           </button>
         ))}
-        {/* bottom row: backspace, 0, OK */}
-        <button onClick={pressBack} disabled={!active} style={numKey(c, bg, active, true)}>
+        <button onClick={pressBack} disabled={!active} style={numKeyStyle(c, bg, active, true)}>
           ⌫
         </button>
-        <button onClick={() => pressDigit('0')} disabled={!active} style={numKey(c, bg, active)}>
+        <button onClick={() => pressDigit('0')} disabled={!active} style={numKeyStyle(c, bg, active)}>
           0
         </button>
         <button
           onClick={pressOK} disabled={!active || input === ''}
           style={{
-            ...numKey(c, bg, active && input !== ''),
+            ...numKeyStyle(c, bg, active && input !== ''),
             background: active && input !== ''
               ? `linear-gradient(135deg, ${c.blue}, ${c.deepBlue})`
               : bg.soft,
@@ -118,12 +116,12 @@ export function TafelsGame({ session, phase, onAnswer, c, bg }: Props) {
   )
 }
 
-function numKey(c: BliepPalette, bg: BgPalette, active: boolean, muted = false): React.CSSProperties {
+function numKeyStyle(c: BliepPalette, bg: BgPalette, active: boolean, muted = false): React.CSSProperties {
   return {
     height: 56, borderRadius: 14, border: 'none',
     cursor: active ? 'pointer' : 'default',
     fontFamily: '"Nunito", system-ui', fontSize: 22, fontWeight: 800,
-    background: muted ? bg.soft : bg.soft,
+    background: bg.soft,
     color: muted ? bg.ink : c.deepBlue,
     opacity: active ? 1 : 0.45,
     boxShadow: `0 2px 0 ${bg.line}`,

@@ -1,36 +1,36 @@
-export interface TafelsConfig {
-  selectedTafels: number[]
+export interface TablesConfig {
+  selectedTables: number[]
 }
 
-export interface TafelsQuestion {
+export interface TableQuestion {
   a: number
   b: number
   answer: number
 }
 
-export interface TafelsSession {
-  questions: TafelsQuestion[]
+export interface TablesSession {
+  questions: TableQuestion[]
   currentIndex: number
   correct: number
   wrong: number
-  wrongQuestions: TafelsQuestion[]
+  wrongQuestions: TableQuestion[]
 }
 
-const CONFIG_KEY = 'bliep_tafels_config'
-const DEFAULT_CONFIG: TafelsConfig = { selectedTafels: [2, 5, 10] }
+const CONFIG_KEY = 'bliep_tables_config'
+const DEFAULT_CONFIG: TablesConfig = { selectedTables: [2, 5, 10] }
 
-export function loadTafelsConfig(): TafelsConfig {
+export function loadTablesConfig(): TablesConfig {
   try {
     const raw = localStorage.getItem(CONFIG_KEY)
     if (!raw) return DEFAULT_CONFIG
-    const parsed = JSON.parse(raw) as TafelsConfig
-    return parsed.selectedTafels?.length ? parsed : DEFAULT_CONFIG
+    const parsed = JSON.parse(raw) as TablesConfig
+    return parsed.selectedTables?.length ? parsed : DEFAULT_CONFIG
   } catch {
     return DEFAULT_CONFIG
   }
 }
 
-export function saveTafelsConfig(config: TafelsConfig): void {
+export function saveTablesConfig(config: TablesConfig): void {
   localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
 }
 
@@ -43,9 +43,9 @@ function shuffle<T>(arr: T[]): T[] {
   return out
 }
 
-export function buildSession(selectedTafels: number[]): TafelsSession {
-  const questions: TafelsQuestion[] = []
-  for (const a of selectedTafels) {
+export function buildSession(selectedTables: number[]): TablesSession {
+  const questions: TableQuestion[] = []
+  for (const a of selectedTables) {
     for (let b = 1; b <= 10; b++) {
       questions.push({ a, b, answer: a * b })
     }
@@ -60,9 +60,9 @@ export function buildSession(selectedTafels: number[]): TafelsSession {
 }
 
 export function recordAnswer(
-  session: TafelsSession,
+  session: TablesSession,
   givenAnswer: number,
-): { isCorrect: boolean; nextSession: TafelsSession } {
+): { isCorrect: boolean; nextSession: TablesSession } {
   const q = session.questions[session.currentIndex]
   const isCorrect = givenAnswer === q.answer
   return {
@@ -77,18 +77,18 @@ export function recordAnswer(
   }
 }
 
-export function formatQuestion(q: TafelsQuestion): string {
+export function formatQuestion(q: TableQuestion): string {
   return `Hoeveel is ${q.a} keer ${q.b}?`
 }
 
-const CORRECT = [
+const CORRECT_PHRASES = [
   '%a keer %b is %c, goed zo!',
   'Super! %a keer %b is %c!',
   'Toppie! %c is het goede antwoord!',
   'Wauw, dat klopt! %a keer %b = %c',
   'Ja! Heel goed, %c!',
 ]
-const WRONG = [
+const WRONG_PHRASES = [
   'Bijna! %a keer %b is %c.',
   'Niet helemaal. Het antwoord is %c.',
   'Oeps! %a keer %b = %c — probeer de volgende!',
@@ -98,30 +98,30 @@ function pick(arr: string[]): string {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-function fill(template: string, q: TafelsQuestion): string {
+function fill(template: string, q: TableQuestion): string {
   return template
     .replace('%a', String(q.a))
     .replace('%b', String(q.b))
     .replace('%c', String(q.answer))
 }
 
-export function encouragementText(isCorrect: boolean, q: TafelsQuestion): string {
-  return fill(pick(isCorrect ? CORRECT : WRONG), q)
+export function encouragementText(isCorrect: boolean, q: TableQuestion): string {
+  return fill(pick(isCorrect ? CORRECT_PHRASES : WRONG_PHRASES), q)
 }
 
-export function scoreText(session: TafelsSession): string {
+export function scoreText(session: TablesSession): string {
   const pct = session.correct / session.questions.length
   const stars = pct >= 0.9 ? 3 : pct >= 0.7 ? 2 : 1
   const starStr = '⭐'.repeat(stars)
   return `Je had ${session.correct} van de ${session.questions.length} goed! ${starStr}`
 }
 
-export const ALL_TAFELS = [2, 3, 4, 5, 6, 7, 8, 9, 10]
+export const ALL_TABLES = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-export const TAFELS_STATUS: Record<string, string> = {
-  'tafels-keuze': 'Kies jouw tafels!',
-  'tafels-vraag': 'Wat is het antwoord?',
-  'tafels-goed':  'Super goed!',
-  'tafels-fout':  'Bijna!',
-  'tafels-klaar': 'Klaar!',
+export const TABLES_STATUS: Record<string, string> = {
+  'tables-setup':    'Kies jouw tafels!',
+  'tables-question': 'Wat is het antwoord?',
+  'tables-correct':  'Super goed!',
+  'tables-wrong':    'Bijna!',
+  'tables-done':     'Klaar!',
 }
