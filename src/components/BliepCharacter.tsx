@@ -93,7 +93,7 @@ export function BliepCharacter({ state = 'idle', palette = 'classic', size = 222
           position: 'absolute', left: '50%', top: px(38), width: px(206), height: px(186),
           marginLeft: -px(103), borderRadius: '50%',
           background: 'radial-gradient(circle at 35% 30%, #ffffff 0%, #fbfbfb 55%, #e8eaee 100%)',
-          boxShadow: `0 ${px(12)}px ${px(24)}px rgba(20,40,90,0.18), inset 0 ${px(-8)}px ${px(20)}px rgba(40,80,160,0.08)`,
+          boxShadow: `0 ${px(12)}px ${px(24)}px rgba(80,20,120,0.18), inset 0 ${px(-8)}px ${px(20)}px rgba(100,30,150,0.08)`,
           zIndex: 1,
         }} />
 
@@ -130,7 +130,7 @@ export function BliepCharacter({ state = 'idle', palette = 'classic', size = 222
         <div style={{
           position: 'absolute', left: '50%', top: px(58), width: px(134), height: px(134),
           marginLeft: -px(67), borderRadius: '50%',
-          background: `radial-gradient(circle at 50% 50%, #0e1e44 0%, ${c.face} 70%, #04081a 100%)`,
+          background: `radial-gradient(circle at 50% 50%, #190730 0%, ${c.face} 70%, #0C0418 100%)`,
           border: `${px(3)}px solid ${c.cyan}`,
           boxShadow: `0 0 ${px(14)}px ${c.glow}aa, inset 0 0 ${px(20)}px rgba(0,0,0,0.6)`,
           zIndex: 5, overflow: 'hidden',

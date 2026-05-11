@@ -20,14 +20,14 @@ export function HistorySheet({ history, onClose, c, bg }: Props) {
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 30 }}>
       <div onClick={onClose} style={{
-        position: 'absolute', inset: 0, background: 'rgba(15,25,55,0.35)',
+        position: 'absolute', inset: 0, background: 'rgba(45,10,70,0.35)',
         backdropFilter: 'blur(4px)',
       }} />
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 0,
         background: bg.soft, borderRadius: '24px 24px 0 0',
         padding: '14px 22px 40px', maxHeight: '80%',
-        boxShadow: '0 -10px 30px rgba(15,30,80,0.18)',
+        boxShadow: '0 -10px 30px rgba(45,10,70,0.18)',
         display: 'flex', flexDirection: 'column',
       }}>
         <div style={{ width: 44, height: 5, background: bg.line, borderRadius: 3, margin: '0 auto 14px' }} />

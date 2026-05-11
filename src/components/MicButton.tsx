@@ -19,7 +19,7 @@ export function MicButton({ phase, c, onClick }: Props) {
       style={{
         position: 'relative', width: 104, height: 104, borderRadius: '50%',
         border: 'none', cursor: disabled ? 'default' : 'pointer',
-        background: `radial-gradient(circle at 35% 30%, ${c.blue} 0%, ${c.deepBlue} 70%, #0c2a72 100%)`,
+        background: `radial-gradient(circle at 35% 30%, ${c.blue} 0%, ${c.deepBlue} 70%, #3A0A60 100%)`,
         boxShadow: isListening
           ? `0 0 0 10px ${c.glow}55, 0 0 0 22px ${c.glow}22, 0 10px 26px ${c.deepBlue}55`
           : `0 10px 22px ${c.deepBlue}55, inset 0 -6px 14px rgba(0,0,0,0.25), inset 0 4px 8px rgba(255,255,255,0.2)`,

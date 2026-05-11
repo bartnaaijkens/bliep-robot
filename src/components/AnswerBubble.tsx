@@ -33,7 +33,7 @@ export function AnswerBubble({ text, isSpeaking, isConfused, c, onReplay }: Prop
       border: `1.5px solid ${isConfused ? c.deepBlue + '33' : c.deepBlue}`,
       fontFamily: '"Nunito", system-ui', fontSize: 15.5, fontWeight: 600,
       lineHeight: 1.4,
-      boxShadow: '0 4px 12px rgba(30,70,180,0.22)',
+      boxShadow: '0 4px 12px rgba(122,40,168,0.22)',
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
       <div>{isSpeaking ? <TypedText text={text} speedMs={30} /> : text}</div>

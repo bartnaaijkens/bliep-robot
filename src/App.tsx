@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { BliepCharacter } from './components/BliepCharacter'
 import { MicButton } from './components/MicButton'
 import { AnswerBubble } from './components/AnswerBubble'
@@ -11,6 +11,7 @@ import { useTTS } from './hooks/useTTS'
 import { loadHistory, saveItem } from './lib/history'
 import type { HistoryItem } from './lib/history'
 import { BLIEP_PALETTES, PALETTE_BG } from './lib/palettes'
+import type { PaletteName } from './lib/palettes'
 import type { BliepState } from './components/BliepCharacter'
 
 type Phase = BliepState | 'result'
@@ -18,13 +19,33 @@ type Phase = BliepState | 'result'
 interface Message { role: 'user' | 'assistant'; content: string }
 interface AskResponse { answer: string | null; topic: string | null; question?: string | null }
 
-const PALETTE = 'classic'
 const CONFUSED_ANSWER = 'Dat weet ik even niet — vraag het nog eens met andere woorden?'
 const RECORDING_ERROR = 'Oeps, Bliep kon even niet luisteren. Probeer het zo nog eens!'
 
+const THEME_SWATCHES: { name: PaletteName; color: string; label: string }[] = [
+  { name: 'classic', color: '#A044C8', label: 'Roze thema' },
+  { name: 'blue',    color: '#2E6FD8', label: 'Blauw thema' },
+]
+const THEME_META_COLORS: Record<string, string> = { classic: '#7A28A8', blue: '#1B4FB8' }
+
 export default function App() {
-  const c = BLIEP_PALETTES[PALETTE]
-  const bg = PALETTE_BG[PALETTE]
+  const [paletteName, setPaletteName] = useState<PaletteName>(() => {
+    const stored = localStorage.getItem('bliep-theme')
+    return (stored === 'classic' || stored === 'blue') ? stored : 'classic'
+  })
+
+  const c = BLIEP_PALETTES[paletteName]
+  const bg = PALETTE_BG[paletteName]
+
+  useEffect(() => {
+    const color = THEME_META_COLORS[paletteName] ?? '#7A28A8'
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color)
+  }, [paletteName])
+
+  const handleThemeChange = useCallback((name: PaletteName) => {
+    setPaletteName(name)
+    localStorage.setItem('bliep-theme', name)
+  }, [])
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [hasInteracted, setHasInteracted] = useState(false)
@@ -324,17 +345,37 @@ export default function App() {
             }}>De robot die op álle vragen een antwoord kan geven</div>
           )}
         </div>
-        <button onClick={() => setShowSheet(true)} style={{
-          border: 'none', background: bg.soft, borderRadius: 18,
-          width: 44, height: 44, cursor: 'pointer',
-          boxShadow: `0 1px 0 ${bg.line}, 0 2px 6px rgba(20,30,60,0.05)`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: c.deepBlue, flexShrink: 0,
-        }} aria-label="Eerdere vragen">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-          </svg>
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {THEME_SWATCHES.map(({ name, color, label }) => (
+              <button
+                key={name}
+                onClick={() => handleThemeChange(name)}
+                aria-label={label}
+                style={{
+                  width: 20, height: 20, borderRadius: '50%', border: 'none', padding: 0,
+                  background: color, cursor: 'pointer',
+                  outline: paletteName === name ? `2.5px solid ${color}` : '2.5px solid transparent',
+                  outlineOffset: 2.5,
+                  boxShadow: `0 1px 4px ${color}66`,
+                  transition: 'outline-color 0.15s, transform 0.15s',
+                  transform: paletteName === name ? 'scale(1.18)' : 'scale(1)',
+                }}
+              />
+            ))}
+          </div>
+          <button onClick={() => setShowSheet(true)} style={{
+            border: 'none', background: bg.soft, borderRadius: 18,
+            width: 44, height: 44, cursor: 'pointer',
+            boxShadow: `0 1px 0 ${bg.line}, 0 2px 6px rgba(20,30,60,0.05)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: c.deepBlue,
+          }} aria-label="Eerdere vragen">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Topic chip */}
@@ -371,7 +412,7 @@ export default function App() {
 
         {/* Bliep character */}
         <div style={{ position: 'relative', marginTop: 4 }}>
-          <BliepCharacter state={bliepState} palette={PALETTE} size={222} />
+          <BliepCharacter state={bliepState} palette={paletteName} size={222} />
           <div style={{
             position: 'absolute', left: '50%', bottom: -8,
             width: 160, height: 14, marginLeft: -80, borderRadius: '50%',
