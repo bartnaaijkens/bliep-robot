@@ -8,11 +8,18 @@ Built as a PWA so it can be added to the phone home screen and shared with class
 
 ## What it does
 
+**Voice Q&A mode**
 - Tap the mic button, ask a question in Dutch, get a spoken answer
 - Remembers follow-up questions within a conversation thread
 - Shows a topic chip while in a thread; tap × to start a new topic
 - History of past questions stored locally in the browser
 - Works offline (app shell cached); answers require an internet connection
+
+**Multiplication tables mode**
+- Switch to the ✖ Tafels tab to practice times tables
+- Choose which tables to practice (2–10); selection is saved between sessions
+- One question at a time with a numpad, progress bar, and live score
+- End screen shows stars (1–3) and highlights any missed sums
 
 ## Stack
 
@@ -34,11 +41,15 @@ The OpenAI API key lives only in a Cloudflare Pages secret and is never included
 ```
 ├── src/
 │   ├── components/       # UI components (BliepCharacter, MicButton, AnswerBubble, …)
+│   │   ├── TablesSetup.tsx   # table selector + start button
+│   │   ├── TablesGame.tsx    # question, numpad, progress bar
+│   │   └── TablesScore.tsx   # end screen — stars, missed sums, replay
 │   ├── hooks/
 │   │   └── useTTS.ts
 │   ├── lib/
 │   │   ├── history.ts    # localStorage helpers
-│   │   └── palettes.ts   # colour constants
+│   │   ├── palettes.ts   # colour constants + example prompts
+│   │   └── tables.ts     # session logic, scoring, encouragement phrases
 │   └── App.tsx           # state machine + layout
 ├── functions/
 │   └── api/ask.ts        # Cloudflare Pages Function — OpenAI proxy
