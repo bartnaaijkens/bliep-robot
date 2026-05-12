@@ -48,12 +48,20 @@ export function useTTS(): TTSResult {
       if (done) return
       done = true
       if (utteranceRef.current === utterance) utteranceRef.current = null
-      onEnd?.()
+      // Defer onEnd to a future task so any pending React state updates
+      // (e.g. setPhase) have time to render before the callback triggers
+      // the next state transition. Also works around Chrome batching the
+      // current-phase and next-phase updates together when onerror fires
+      // quickly after speak() (a known Web Speech API quirk on Windows).
+      if (onEnd) setTimeout(onEnd, 0)
     }
     utterance.onend = finish
     utterance.onerror = finish
 
     utteranceRef.current = utterance
+    // Resume synthesis first — Chrome can enter a paused/stuck state after
+    // repeated cancel() calls, causing subsequent speak() calls to silently fail.
+    if (window.speechSynthesis.paused) window.speechSynthesis.resume()
     window.speechSynthesis.speak(utterance)
   }, [supported])
 

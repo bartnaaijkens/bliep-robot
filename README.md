@@ -21,6 +21,13 @@ Built as a PWA so it can be added to the phone home screen and shared with class
 - One question at a time with a numpad, progress bar, and live score
 - End screen shows stars (1–3) and highlights any missed sums
 
+**Thinking mode (🧠 Denken)**
+- Multiple-choice questions across four categories: odd-one-out, pattern completion, true/false, and logical deduction
+- 150-question bank; 10 questions per session sampled by difficulty
+- Adaptive difficulty: level rises after ≥90% correct, drops after ≤50%
+- No API calls — fully offline; feedback spoken aloud via TTS
+- Target audience: 8–9 year olds (Dutch primary school groep 5–6)
+
 ## Stack
 
 | Layer | Technology |
@@ -41,15 +48,18 @@ The OpenAI API key lives only in a Cloudflare Pages secret and is never included
 ```
 ├── src/
 │   ├── components/       # UI components (BliepCharacter, MicButton, AnswerBubble, …)
-│   │   ├── TablesSetup.tsx   # table selector + start button
-│   │   ├── TablesGame.tsx    # question, numpad, progress bar
-│   │   └── TablesScore.tsx   # end screen — stars, missed sums, replay
+│   │   ├── TablesSetup.tsx    # table selector + start button
+│   │   ├── TablesGame.tsx     # question, numpad, progress bar
+│   │   ├── TablesScore.tsx    # end screen — stars, missed sums, replay
+│   │   ├── ThinkingGame.tsx   # multiple-choice question + answer buttons
+│   │   └── ThinkingScore.tsx  # end screen — stars, level, replay
 │   ├── hooks/
 │   │   └── useTTS.ts
 │   ├── lib/
 │   │   ├── history.ts    # localStorage helpers
 │   │   ├── palettes.ts   # colour constants + example prompts
-│   │   └── tables.ts     # session logic, scoring, encouragement phrases
+│   │   ├── tables.ts     # session logic, scoring, encouragement phrases
+│   │   └── thinking.ts   # 150-question bank, adaptive level, session logic
 │   └── App.tsx           # state machine + layout
 ├── functions/
 │   └── api/ask.ts        # Cloudflare Pages Function — OpenAI proxy

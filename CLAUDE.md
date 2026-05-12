@@ -23,12 +23,13 @@ npm run deploy       # build + wrangler pages deploy dist
 
 ## App modes
 
-The app has two modes, switched via a tab bar at the top:
+The app has three modes, switched via a tab bar at the top:
 
 | Mode | Label | Description |
 |---|---|---|
 | `questions` | 🎤 Vragen | Default voice Q&A mode |
 | `tables` | ✖ Tafels | Multiplication tables practice |
+| `thinking` | 🧠 Denken | Critical & logical thinking (multiple choice) |
 
 ## Phase state machine
 
@@ -46,6 +47,13 @@ tables-setup → tables-question → tables-correct ↘
 ```
 Setup persists the selected tables to `localStorage`. Each session shuffles all `a × b` combinations for the chosen tables. Done screen shows stars (1–3) and lists any missed questions.
 
+**Thinking mode:**
+```
+thinking-question → thinking-correct ↘
+                 ↘ thinking-wrong   → thinking-done → (replay)
+```
+No setup screen — session starts immediately on tab switch. 10 questions per session sampled from a 150-question bank across 3 difficulty levels. Level stored in `localStorage` and adjusted after each session (≥90% → up, ≤50% → down).
+
 ## Key files
 
 | File | Purpose |
@@ -55,9 +63,12 @@ Setup persists the selected tables to `localStorage`. Each session shuffles all 
 | `src/lib/palettes.ts` | Colour constants — `BLIEP_PALETTES` (character) + `PALETTE_BG` (background) |
 | `src/lib/history.ts` | localStorage read/write, `relativeTime()` helper |
 | `src/lib/tables.ts` | Tables logic — session building, answer scoring, encouragement phrases, localStorage config |
+| `src/lib/thinking.ts` | Thinking mode — 150-question bank, session building, adaptive level, scoring |
 | `src/components/TablesSetup.tsx` | Table selector grid + Start button |
 | `src/components/TablesGame.tsx` | Question display, numpad input, progress bar, score chips |
 | `src/components/TablesScore.tsx` | End-of-session stars, score summary, missed questions, replay/change buttons |
+| `src/components/ThinkingGame.tsx` | Multiple-choice question display, answer highlighting, progress bar |
+| `src/components/ThinkingScore.tsx` | End-of-session stars, level indicator, replay button |
 | `functions/api/ask.ts` | OpenAI gateway — validates origin, transcribes uploaded audio, generates Dutch answer/topic |
 
 ## Secrets and environment

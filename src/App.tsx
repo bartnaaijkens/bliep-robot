@@ -10,6 +10,8 @@ import { QuestionAffordance } from './components/QuestionAffordance'
 import { TablesSetup } from './components/TablesSetup'
 import { TablesGame } from './components/TablesGame'
 import { TablesScore } from './components/TablesScore'
+import { ThinkingGame } from './components/ThinkingGame'
+import { ThinkingScore } from './components/ThinkingScore'
 import { useTTS } from './hooks/useTTS'
 import { loadHistory, saveItem } from './lib/history'
 import type { HistoryItem } from './lib/history'
@@ -21,10 +23,17 @@ import {
   formatQuestion, encouragementText, scoreText, TABLES_STATUS,
 } from './lib/tables'
 import type { TablesConfig, TablesSession } from './lib/tables'
+import {
+  loadThinkingLevel, buildThinkingSession, recordThinkingAnswer,
+  thinkingEncouragementText, thinkingScoreText, formatThinkingQuestion,
+  advanceThinkingLevel, THINKING_STATUS,
+} from './lib/thinking'
+import type { ThinkingSession } from './lib/thinking'
 
-type AppMode = 'questions' | 'tables'
+type AppMode = 'questions' | 'tables' | 'thinking'
 type Phase = BliepState | 'result'
            | 'tables-setup' | 'tables-question' | 'tables-correct' | 'tables-wrong' | 'tables-done'
+           | 'thinking-question' | 'thinking-correct' | 'thinking-wrong' | 'thinking-done'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 interface AskResponse { answer: string | null; topic: string | null; question?: string | null }
@@ -60,6 +69,7 @@ export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('questions')
   const [tablesConfig, setTablesConfig] = useState<TablesConfig>(() => loadTablesConfig())
   const [tablesSession, setTablesSession] = useState<TablesSession | null>(null)
+  const [thinkingSession, setThinkingSession] = useState<ThinkingSession | null>(null)
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [hasInteracted, setHasInteracted] = useState(false)
@@ -309,6 +319,12 @@ export default function App() {
     setAppMode(mode)
     if (mode === 'tables') {
       setPhase('tables-setup')
+    } else if (mode === 'thinking') {
+      const level = loadThinkingLevel()
+      const session = buildThinkingSession(level)
+      setThinkingSession(session)
+      setPhase('thinking-question')
+      tts.speak(formatThinkingQuestion(session.questions[0]))
     } else {
       setPhase('idle')
       setQuestion('')
@@ -353,17 +369,47 @@ export default function App() {
     tts.speak(encouragementText(isCorrect, q), () => advanceTables(nextSession))
   }, [tablesSession, tts, advanceTables])
 
+  // Increments currentIndex and either advances to the next question or ends the session.
+  // Called after TTS finishes speaking the feedback for an answered question.
+  const advanceThinking = useCallback((session: ThinkingSession) => {
+    const nextIndex = session.currentIndex + 1
+    const advanced: ThinkingSession = { ...session, currentIndex: nextIndex }
+    if (nextIndex >= session.questions.length) {
+      advanceThinkingLevel(advanced)
+      setThinkingSession(advanced)
+      setPhase('thinking-done')
+      tts.speak(thinkingScoreText(advanced))
+    } else {
+      setThinkingSession(advanced)
+      setPhase('thinking-question')
+      tts.speak(formatThinkingQuestion(advanced.questions[nextIndex]))
+    }
+  }, [tts])
+
+  const handleThinkingAnswer = useCallback((chosenIndex: number) => {
+    if (!thinkingSession) return
+    const q = thinkingSession.questions[thinkingSession.currentIndex]
+    const { isCorrect, nextSession } = recordThinkingAnswer(thinkingSession, chosenIndex)
+    setThinkingSession(nextSession)
+    setPhase(isCorrect ? 'thinking-correct' : 'thinking-wrong')
+    tts.speak(thinkingEncouragementText(isCorrect, q), () => advanceThinking(nextSession))
+  }, [thinkingSession, tts, advanceThinking])
+
   const bliepState: BliepState =
     phase === 'result' ? 'idle' :
     phase === 'tables-question' ? 'idle' :
     phase === 'tables-correct' ? 'speaking' :
     phase === 'tables-wrong' ? 'confused' :
     phase === 'tables-setup' || phase === 'tables-done' ? 'idle' :
+    phase === 'thinking-question' || phase === 'thinking-done' ? 'idle' :
+    phase === 'thinking-correct' ? 'speaking' :
+    phase === 'thinking-wrong' ? 'confused' :
     phase as BliepState
   const isTablesMode = appMode === 'tables'
-  const showQuestionAffordance = !isTablesMode && phase !== 'idle' && phase !== 'listening' && question
-  const showSubtitle = !hasInteracted && !threadTopic && !isTablesMode
-  const showExamples = phase === 'idle' && !threadTopic && !isTablesMode
+  const isThinkingMode = appMode === 'thinking'
+  const showQuestionAffordance = !isTablesMode && !isThinkingMode && phase !== 'idle' && phase !== 'listening' && question
+  const showSubtitle = !hasInteracted && !threadTopic && !isTablesMode && !isThinkingMode
+  const showExamples = phase === 'idle' && !threadTopic && !isTablesMode && !isThinkingMode
 
   const questionsStatusText: Record<string, string> = {
     idle:      hasInteracted || threadTopic ? 'Ik wacht op je vraag…' : 'Hoi! Wat wil je weten?',
@@ -373,7 +419,7 @@ export default function App() {
     confused:  'Oeps… dat weet ik even niet',
     result:    'Ik ben er nog!',
   }
-  const statusText = TABLES_STATUS[phase] ?? questionsStatusText[phase]
+  const statusText = THINKING_STATUS[phase] ?? TABLES_STATUS[phase] ?? questionsStatusText[phase]
 
   return (
     <div style={{
@@ -455,9 +501,10 @@ export default function App() {
         padding: '8px 22px 0',
         display: 'flex', gap: 8,
       }}>
-        {(['questions', 'tables'] as AppMode[]).map(mode => {
+        {(['questions', 'tables', 'thinking'] as AppMode[]).map(mode => {
           const active = appMode === mode
-          const label = mode === 'questions' ? '🎤 Vragen' : '✖ Tafels'
+          const LABELS: Record<AppMode, string> = { questions: '🎤 Vragen', tables: '✖ Tafels', thinking: '🧠 Denken' }
+          const label = LABELS[mode]
           return (
             <button key={mode} onClick={() => handleModeSwitch(mode)} style={{
               padding: '6px 16px', borderRadius: 999, border: 'none', cursor: 'pointer',
@@ -480,7 +527,7 @@ export default function App() {
         padding: '4px 22px 0', minHeight: 38,
         display: 'flex', justifyContent: 'flex-start',
       }}>
-        {threadTopic && !isTablesMode && (
+        {threadTopic && !isTablesMode && !isThinkingMode && (
           <TopicChip topic={threadTopic} turns={threadTurns} c={c} bg={bg} onClear={clearThread} />
         )}
       </div>
@@ -538,7 +585,7 @@ export default function App() {
         )}
 
         {/* Answer / examples (vragen mode only) */}
-        {!isTablesMode && (
+        {!isTablesMode && !isThinkingMode && (
           <div style={{ width: '100%', minHeight: 76, marginTop: 10, paddingBottom: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, padding: '0 4px 20px' }}>
             {(phase === 'speaking' || phase === 'result' || phase === 'confused') && answer && (
               <AnswerBubble
@@ -586,8 +633,30 @@ export default function App() {
         )}
       </div>
 
+      {/* Thinking mode */}
+      {isThinkingMode && (
+        <div style={{ position: 'relative', zIndex: 2, padding: '0 18px', width: '100%', boxSizing: 'border-box' }}>
+          {(phase === 'thinking-question' || phase === 'thinking-correct' || phase === 'thinking-wrong') && thinkingSession && (
+            <ThinkingGame session={thinkingSession} phase={phase} onAnswer={handleThinkingAnswer} c={c} bg={bg} />
+          )}
+          {phase === 'thinking-done' && thinkingSession && (
+            <ThinkingScore
+              session={thinkingSession}
+              onReplay={() => {
+                const level = loadThinkingLevel()
+                const session = buildThinkingSession(level)
+                setThinkingSession(session)
+                setPhase('thinking-question')
+                tts.speak(formatThinkingQuestion(session.questions[0]))
+              }}
+              c={c} bg={bg}
+            />
+          )}
+        </div>
+      )}
+
       {/* Mic button area (vragen mode only) */}
-      {!isTablesMode && (
+      {!isTablesMode && !isThinkingMode && (
       <div style={{
         position: 'relative', zIndex: 2, padding: '0 24px 8px',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
