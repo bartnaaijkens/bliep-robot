@@ -12,6 +12,8 @@ import { TablesGame } from './components/TablesGame'
 import { TablesScore } from './components/TablesScore'
 import { ThinkingGame } from './components/ThinkingGame'
 import { ThinkingScore } from './components/ThinkingScore'
+import { GeoGame } from './components/GeoGame'
+import { GeoScore } from './components/GeoScore'
 import { useTTS } from './hooks/useTTS'
 import { loadHistory, saveItem } from './lib/history'
 import type { HistoryItem } from './lib/history'
@@ -29,11 +31,18 @@ import {
   advanceThinkingLevel, THINKING_STATUS,
 } from './lib/thinking'
 import type { ThinkingSession } from './lib/thinking'
+import {
+  loadGeoLevel, buildGeoSession, recordGeoAnswer,
+  geoEncouragementText, geoScoreText, formatGeoQuestion,
+  advanceGeoLevel, GEO_STATUS,
+} from './lib/geo'
+import type { GeoSession } from './lib/geo'
 
-type AppMode = 'questions' | 'tables' | 'thinking'
+type AppMode = 'questions' | 'tables' | 'thinking' | 'geo'
 type Phase = BliepState | 'result'
            | 'tables-setup' | 'tables-question' | 'tables-correct' | 'tables-wrong' | 'tables-done'
            | 'thinking-question' | 'thinking-correct' | 'thinking-wrong' | 'thinking-done'
+           | 'geo-question' | 'geo-correct' | 'geo-wrong' | 'geo-done'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 interface AskResponse { answer: string | null; topic: string | null; question?: string | null }
@@ -70,6 +79,7 @@ export default function App() {
   const [tablesConfig, setTablesConfig] = useState<TablesConfig>(() => loadTablesConfig())
   const [tablesSession, setTablesSession] = useState<TablesSession | null>(null)
   const [thinkingSession, setThinkingSession] = useState<ThinkingSession | null>(null)
+  const [geoSession, setGeoSession] = useState<GeoSession | null>(null)
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [hasInteracted, setHasInteracted] = useState(false)
@@ -325,6 +335,12 @@ export default function App() {
       setThinkingSession(session)
       setPhase('thinking-question')
       tts.speak(formatThinkingQuestion(session.questions[0]))
+    } else if (mode === 'geo') {
+      const level = loadGeoLevel()
+      const session = buildGeoSession(level)
+      setGeoSession(session)
+      setPhase('geo-question')
+      tts.speak(formatGeoQuestion(session.questions[0]))
     } else {
       setPhase('idle')
       setQuestion('')
@@ -395,6 +411,30 @@ export default function App() {
     tts.speak(thinkingEncouragementText(isCorrect, q), () => advanceThinking(nextSession))
   }, [thinkingSession, tts, advanceThinking])
 
+  const advanceGeo = useCallback((session: GeoSession) => {
+    const nextIndex = session.currentIndex + 1
+    const advanced: GeoSession = { ...session, currentIndex: nextIndex }
+    if (nextIndex >= session.questions.length) {
+      advanceGeoLevel(advanced)
+      setGeoSession(advanced)
+      setPhase('geo-done')
+      tts.speak(geoScoreText(advanced))
+    } else {
+      setGeoSession(advanced)
+      setPhase('geo-question')
+      tts.speak(formatGeoQuestion(advanced.questions[nextIndex]))
+    }
+  }, [tts])
+
+  const handleGeoAnswer = useCallback((chosenIndex: number) => {
+    if (!geoSession) return
+    const q = geoSession.questions[geoSession.currentIndex]
+    const { isCorrect, nextSession } = recordGeoAnswer(geoSession, chosenIndex)
+    setGeoSession(nextSession)
+    setPhase(isCorrect ? 'geo-correct' : 'geo-wrong')
+    tts.speak(geoEncouragementText(isCorrect, q), () => advanceGeo(nextSession))
+  }, [geoSession, tts, advanceGeo])
+
   const bliepState: BliepState =
     phase === 'result' ? 'idle' :
     phase === 'tables-question' ? 'idle' :
@@ -404,12 +444,16 @@ export default function App() {
     phase === 'thinking-question' || phase === 'thinking-done' ? 'idle' :
     phase === 'thinking-correct' ? 'speaking' :
     phase === 'thinking-wrong' ? 'confused' :
+    phase === 'geo-question' || phase === 'geo-done' ? 'idle' :
+    phase === 'geo-correct' ? 'speaking' :
+    phase === 'geo-wrong' ? 'confused' :
     phase as BliepState
   const isTablesMode = appMode === 'tables'
   const isThinkingMode = appMode === 'thinking'
-  const showQuestionAffordance = !isTablesMode && !isThinkingMode && phase !== 'idle' && phase !== 'listening' && question
-  const showSubtitle = !hasInteracted && !threadTopic && !isTablesMode && !isThinkingMode
-  const showExamples = phase === 'idle' && !threadTopic && !isTablesMode && !isThinkingMode
+  const isGeoMode = appMode === 'geo'
+  const showQuestionAffordance = !isTablesMode && !isThinkingMode && !isGeoMode && phase !== 'idle' && phase !== 'listening' && question
+  const showSubtitle = !hasInteracted && !threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode
+  const showExamples = phase === 'idle' && !threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode
 
   const questionsStatusText: Record<string, string> = {
     idle:      hasInteracted || threadTopic ? 'Ik wacht op je vraag…' : 'Hoi! Wat wil je weten?',
@@ -419,7 +463,7 @@ export default function App() {
     confused:  'Oeps… dat weet ik even niet',
     result:    'Ik ben er nog!',
   }
-  const statusText = THINKING_STATUS[phase] ?? TABLES_STATUS[phase] ?? questionsStatusText[phase]
+  const statusText = GEO_STATUS[phase] ?? THINKING_STATUS[phase] ?? TABLES_STATUS[phase] ?? questionsStatusText[phase]
 
   return (
     <div style={{
@@ -501,9 +545,9 @@ export default function App() {
         padding: '8px 22px 0',
         display: 'flex', gap: 8,
       }}>
-        {(['questions', 'tables', 'thinking'] as AppMode[]).map(mode => {
+        {(['questions', 'tables', 'thinking', 'geo'] as AppMode[]).map(mode => {
           const active = appMode === mode
-          const LABELS: Record<AppMode, string> = { questions: '🎤 Vragen', tables: '✖ Tafels', thinking: '🧠 Denken' }
+          const LABELS: Record<AppMode, string> = { questions: '🎤 Vragen', tables: '✖ Tafels', thinking: '🧠 Denken', geo: '🗺 Kaart' }
           const label = LABELS[mode]
           return (
             <button key={mode} onClick={() => handleModeSwitch(mode)} style={{
@@ -527,7 +571,7 @@ export default function App() {
         padding: '4px 22px 0', minHeight: 38,
         display: 'flex', justifyContent: 'flex-start',
       }}>
-        {threadTopic && !isTablesMode && !isThinkingMode && (
+        {threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode && (
           <TopicChip topic={threadTopic} turns={threadTurns} c={c} bg={bg} onClear={clearThread} />
         )}
       </div>
@@ -655,8 +699,30 @@ export default function App() {
         </div>
       )}
 
+      {/* Geo mode */}
+      {isGeoMode && (
+        <div style={{ position: 'relative', zIndex: 2, padding: '0 18px', width: '100%', boxSizing: 'border-box' }}>
+          {(phase === 'geo-question' || phase === 'geo-correct' || phase === 'geo-wrong') && geoSession && (
+            <GeoGame session={geoSession} phase={phase} onAnswer={handleGeoAnswer} c={c} bg={bg} />
+          )}
+          {phase === 'geo-done' && geoSession && (
+            <GeoScore
+              session={geoSession}
+              onReplay={() => {
+                const level = loadGeoLevel()
+                const session = buildGeoSession(level)
+                setGeoSession(session)
+                setPhase('geo-question')
+                tts.speak(formatGeoQuestion(session.questions[0]))
+              }}
+              c={c} bg={bg}
+            />
+          )}
+        </div>
+      )}
+
       {/* Mic button area (vragen mode only) */}
-      {!isTablesMode && !isThinkingMode && (
+      {!isTablesMode && !isThinkingMode && !isGeoMode && (
       <div style={{
         position: 'relative', zIndex: 2, padding: '0 24px 8px',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
