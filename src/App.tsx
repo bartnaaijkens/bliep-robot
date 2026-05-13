@@ -14,6 +14,10 @@ import { ThinkingGame } from './components/ThinkingGame'
 import { ThinkingScore } from './components/ThinkingScore'
 import { GeoGame } from './components/GeoGame'
 import { GeoScore } from './components/GeoScore'
+import { GamesMenu } from './components/GamesMenu'
+import { GardenSelect } from './components/GardenSelect'
+import { GardenGrowing } from './components/GardenGrowing'
+import { GardenScore } from './components/GardenScore'
 import { useTTS } from './hooks/useTTS'
 import { loadHistory, saveItem } from './lib/history'
 import type { HistoryItem } from './lib/history'
@@ -37,12 +41,20 @@ import {
   advanceGeoLevel, GEO_STATUS,
 } from './lib/geo'
 import type { GeoSession } from './lib/geo'
+import {
+  buildGardenSession, applyGardenAction, generateHintText,
+  gardenScoreText, GARDEN_STATUS, STAGE_CONGRATULATIONS,
+  WILT_FEEDBACK, WARNING_FEEDBACK,
+} from './lib/garden'
+import type { PlantSession, PlantId, CareAction } from './lib/garden'
 
-type AppMode = 'questions' | 'tables' | 'thinking' | 'geo'
+type AppMode = 'questions' | 'tables' | 'thinking' | 'geo' | 'games'
 type Phase = BliepState | 'result'
            | 'tables-setup' | 'tables-question' | 'tables-correct' | 'tables-wrong' | 'tables-done'
            | 'thinking-question' | 'thinking-correct' | 'thinking-wrong' | 'thinking-done'
            | 'geo-question' | 'geo-correct' | 'geo-wrong' | 'geo-done'
+           | 'games-menu'
+           | 'garden-select' | 'garden-growing' | 'garden-action' | 'garden-done'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 interface AskResponse { answer: string | null; topic: string | null; question?: string | null }
@@ -80,6 +92,7 @@ export default function App() {
   const [tablesSession, setTablesSession] = useState<TablesSession | null>(null)
   const [thinkingSession, setThinkingSession] = useState<ThinkingSession | null>(null)
   const [geoSession, setGeoSession] = useState<GeoSession | null>(null)
+  const [gardenSession, setGardenSession] = useState<PlantSession | null>(null)
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [hasInteracted, setHasInteracted] = useState(false)
@@ -323,6 +336,55 @@ export default function App() {
     tts.speak(answer, () => setPhase('result'))
   }, [answer, tts])
 
+  const handleGardenSelect = useCallback((plant: PlantId) => {
+    const session = buildGardenSession(plant)
+    setGardenSession(session)
+    setPhase('garden-growing')
+    const name = session.plant === 'sunflower' ? 'Zonnebloem' : session.plant === 'tomato' ? 'Tomaat' : 'Cactus'
+    tts.speak(`Laten we beginnen! Jij hebt een ${name} gekozen. Vertel Bliep wat hij moet doen om de plant groot te maken!`)
+  }, [tts])
+
+  const handleGardenAction = useCallback((action: CareAction) => {
+    if (!gardenSession) return
+    const result = applyGardenAction(gardenSession, action)
+    setGardenSession(result.nextSession)
+    setPhase('garden-action')
+    tts.speak(result.feedback, () => {
+      if (result.stageFailed) {
+        setPhase('garden-done')
+        tts.speak(WILT_FEEDBACK[result.nextSession.plant])
+      } else if (result.stageComplete && result.nextSession.stage >= 5) {
+        setPhase('garden-done')
+        tts.speak(gardenScoreText(result.nextSession))
+      } else if (result.stageComplete) {
+        setPhase('garden-growing')
+        tts.speak(STAGE_CONGRATULATIONS[result.nextSession.stagesCompleted - 1])
+      } else if (result.stageStalled) {
+        setPhase('garden-growing')
+        tts.speak(`Nog niet genoeg zorg! De plant heeft meer aandacht nodig. Probeer het nog een keer!`)
+      } else if (result.healthWarning) {
+        setPhase('garden-growing')
+        tts.speak(WARNING_FEEDBACK[result.nextSession.plant])
+      } else {
+        setPhase('garden-growing')
+      }
+    })
+  }, [gardenSession, tts])
+
+  const handleGardenHint = useCallback(() => {
+    if (!gardenSession) return
+    tts.speak(generateHintText(gardenSession))
+  }, [gardenSession, tts])
+
+  const handleGardenRestart = useCallback((plant?: PlantId) => {
+    const p = plant ?? (gardenSession?.plant ?? 'tomato')
+    const session = buildGardenSession(p)
+    setGardenSession(session)
+    setPhase('garden-growing')
+    const name = p === 'sunflower' ? 'Zonnebloem' : p === 'tomato' ? 'Tomaat' : 'Cactus'
+    tts.speak(`Opnieuw beginnen! Zorg goed voor je ${name}!`)
+  }, [gardenSession, tts])
+
   const handleModeSwitch = useCallback((mode: AppMode) => {
     tts.stop()
     abortRecording()
@@ -341,6 +403,8 @@ export default function App() {
       setGeoSession(session)
       setPhase('geo-question')
       tts.speak(formatGeoQuestion(session.questions[0]))
+    } else if (mode === 'games') {
+      setPhase('games-menu')
     } else {
       setPhase('idle')
       setQuestion('')
@@ -447,13 +511,18 @@ export default function App() {
     phase === 'geo-question' || phase === 'geo-done' ? 'idle' :
     phase === 'geo-correct' ? 'speaking' :
     phase === 'geo-wrong' ? 'confused' :
+    phase === 'games-menu' || phase === 'garden-select' ? 'idle' :
+    phase === 'garden-growing' ? 'idle' :
+    phase === 'garden-action' ? 'speaking' :
+    phase === 'garden-done' ? (gardenSession && gardenSession.health < 20 && gardenSession.stagesCompleted < 1 ? 'confused' : 'idle') :
     phase as BliepState
   const isTablesMode = appMode === 'tables'
   const isThinkingMode = appMode === 'thinking'
   const isGeoMode = appMode === 'geo'
-  const showQuestionAffordance = !isTablesMode && !isThinkingMode && !isGeoMode && phase !== 'idle' && phase !== 'listening' && question
-  const showSubtitle = !hasInteracted && !threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode
-  const showExamples = phase === 'idle' && !threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode
+  const isGamesMode = appMode === 'games'
+  const showQuestionAffordance = !isTablesMode && !isThinkingMode && !isGeoMode && !isGamesMode && phase !== 'idle' && phase !== 'listening' && question
+  const showSubtitle = !hasInteracted && !threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode && !isGamesMode
+  const showExamples = phase === 'idle' && !threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode && !isGamesMode
 
   const questionsStatusText: Record<string, string> = {
     idle:      hasInteracted || threadTopic ? 'Ik wacht op je vraag…' : 'Hoi! Wat wil je weten?',
@@ -463,7 +532,7 @@ export default function App() {
     confused:  'Oeps… dat weet ik even niet',
     result:    'Ik ben er nog!',
   }
-  const statusText = GEO_STATUS[phase] ?? THINKING_STATUS[phase] ?? TABLES_STATUS[phase] ?? questionsStatusText[phase]
+  const statusText = GARDEN_STATUS[phase] ?? GEO_STATUS[phase] ?? THINKING_STATUS[phase] ?? TABLES_STATUS[phase] ?? questionsStatusText[phase]
 
   return (
     <div style={{
@@ -544,10 +613,12 @@ export default function App() {
         position: 'relative', zIndex: 2,
         padding: '8px 22px 0',
         display: 'flex', gap: 8,
+        overflowX: 'auto',
+        scrollbarWidth: 'none',
       }}>
-        {(['questions', 'tables', 'thinking', 'geo'] as AppMode[]).map(mode => {
+        {(['questions', 'tables', 'thinking', 'geo', 'games'] as AppMode[]).map(mode => {
           const active = appMode === mode
-          const LABELS: Record<AppMode, string> = { questions: '🎤 Vragen', tables: '✖ Tafels', thinking: '🧠 Denken', geo: '🗺 Kaart' }
+          const LABELS: Record<AppMode, string> = { questions: '🎤 Vragen', tables: '✖ Tafels', thinking: '🧠 Denken', geo: '🗺 Kaart', games: '🎮 Spellen' }
           const label = LABELS[mode]
           return (
             <button key={mode} onClick={() => handleModeSwitch(mode)} style={{
@@ -571,7 +642,7 @@ export default function App() {
         padding: '4px 22px 0', minHeight: 38,
         display: 'flex', justifyContent: 'flex-start',
       }}>
-        {threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode && (
+        {threadTopic && !isTablesMode && !isThinkingMode && !isGeoMode && !isGamesMode && (
           <TopicChip topic={threadTopic} turns={threadTurns} c={c} bg={bg} onClear={clearThread} />
         )}
       </div>
@@ -629,7 +700,7 @@ export default function App() {
         )}
 
         {/* Answer / examples (vragen mode only) */}
-        {!isTablesMode && !isThinkingMode && (
+        {!isTablesMode && !isThinkingMode && !isGamesMode && (
           <div style={{ width: '100%', minHeight: 76, marginTop: 10, paddingBottom: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, padding: '0 4px 20px' }}>
             {(phase === 'speaking' || phase === 'result' || phase === 'confused') && answer && (
               <AnswerBubble
@@ -721,8 +792,42 @@ export default function App() {
         </div>
       )}
 
+      {/* Games mode */}
+      {isGamesMode && (
+        <div style={{ position: 'relative', zIndex: 2, padding: '0 18px', width: '100%', boxSizing: 'border-box' }}>
+          {phase === 'games-menu' && (
+            <GamesMenu
+              onSelectGame={(game) => {
+                if (game === 'garden') setPhase('garden-select')
+              }}
+              c={c} bg={bg}
+            />
+          )}
+          {phase === 'garden-select' && (
+            <GardenSelect onSelect={handleGardenSelect} c={c} bg={bg} />
+          )}
+          {(phase === 'garden-growing' || phase === 'garden-action') && gardenSession && (
+            <GardenGrowing
+              session={gardenSession}
+              phase={phase}
+              onAction={handleGardenAction}
+              onHint={handleGardenHint}
+              c={c} bg={bg}
+            />
+          )}
+          {phase === 'garden-done' && gardenSession && (
+            <GardenScore
+              session={gardenSession}
+              onReplay={() => handleGardenRestart()}
+              onChangeSetup={() => setPhase('garden-select')}
+              c={c} bg={bg}
+            />
+          )}
+        </div>
+      )}
+
       {/* Mic button area (vragen mode only) */}
-      {!isTablesMode && !isThinkingMode && !isGeoMode && (
+      {!isTablesMode && !isThinkingMode && !isGeoMode && !isGamesMode && (
       <div style={{
         position: 'relative', zIndex: 2, padding: '0 24px 8px',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
