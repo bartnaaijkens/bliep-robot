@@ -47,6 +47,7 @@ import {
   WILT_FEEDBACK, WARNING_FEEDBACK,
 } from './lib/garden'
 import type { PlantSession, PlantId, CareAction } from './lib/garden'
+import { getRemainingQuestions, consumeQuestion, hoursUntilResetLabel, setVip, WARNING_QUESTIONS } from './lib/rateLimit'
 
 type AppMode = 'questions' | 'tables' | 'thinking' | 'geo' | 'games'
 type Phase = BliepState | 'result'
@@ -82,6 +83,15 @@ export default function App() {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color)
   }, [paletteName])
 
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('vip') === 'zoeismijnuitvinder') {
+      setVip()
+      url.searchParams.delete('vip')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [])
+
   const handleThemeChange = useCallback((name: PaletteName) => {
     setPaletteName(name)
     localStorage.setItem('bliep-theme', name)
@@ -100,6 +110,7 @@ export default function App() {
   const [answer, setAnswer] = useState('')
   const [duration, setDuration] = useState(3)
   const [pillOpen, setPillOpen] = useState(false)
+  const [remaining, setRemaining] = useState(() => getRemainingQuestions())
 
   const [threadTopic, setThreadTopic] = useState<string | null>(null)
   const [threadTurns, setThreadTurns] = useState(0)
@@ -152,9 +163,16 @@ export default function App() {
     setQuestion(spokenQuestion)
     setAnswer(responseText)
     setPhase('speaking')
-    tts.speak(responseText, () => setPhase('result'))
 
     if (!isConfused) {
+      const rem = consumeQuestion()
+      setRemaining(rem)
+      const onEnd = rem === WARNING_QUESTIONS
+        ? () => tts.speak(`Nog maar ${rem} vragen over!`, () => setPhase('result'))
+        : rem === 0
+        ? () => tts.speak(`Dat was je laatste vraag. Kom ${hoursUntilResetLabel()} terug!`, () => setPhase('result'))
+        : () => setPhase('result')
+      tts.speak(responseText, onEnd)
       setThreadTopic(prev => prev ?? topic)
       setThreadTurns(n => n + 1)
       const newMessages: Message[] = [
@@ -166,6 +184,7 @@ export default function App() {
       saveItem({ q: spokenQuestion, a: responseText, topic: topic ?? 'Algemeen', ts: Date.now() })
       setHistory(loadHistory())
     } else {
+      tts.speak(responseText, () => setPhase('result'))
       setPhase('confused')
     }
   }, [threadMessages, tts])
@@ -173,9 +192,18 @@ export default function App() {
   const processRecordedAudio = useCallback((audioBlob: Blob) => {
     const elapsed = Math.round((Date.now() - listenStartRef.current) / 1000)
     setDuration(Math.max(1, elapsed))
-    setPhase('thinking')
     tts.stop()
 
+    if (getRemainingQuestions() === 0) {
+      setPhase('speaking')
+      tts.speak(
+        `Je hebt alle vragen voor nu gebruikt. Kom ${hoursUntilResetLabel()} terug!`,
+        () => setPhase('result')
+      )
+      return
+    }
+
+    setPhase('thinking')
     const contextMessages = threadMessages.slice(-6)
     const formData = new FormData()
     formData.append('audio', audioBlob, 'question.webm')
@@ -282,8 +310,18 @@ export default function App() {
     setQuestion(label)
     setAnswer('')
     setPillOpen(false)
-    setPhase('thinking')
     tts.stop()
+
+    if (getRemainingQuestions() === 0) {
+      setPhase('speaking')
+      tts.speak(
+        `Je hebt alle vragen voor nu gebruikt. Kom ${hoursUntilResetLabel()} terug!`,
+        () => setPhase('result')
+      )
+      return
+    }
+
+    setPhase('thinking')
 
     fetch('/api/ask', {
       method: 'POST',
@@ -298,7 +336,14 @@ export default function App() {
         setQuestion(label)
         setAnswer(responseText)
         setPhase('speaking')
-        tts.speak(responseText, () => setPhase('result'))
+        const rem = consumeQuestion()
+        setRemaining(rem)
+        const onEnd = rem === WARNING_QUESTIONS
+          ? () => tts.speak(`Nog maar ${rem} vragen over!`, () => setPhase('result'))
+          : rem === 0
+          ? () => tts.speak(`Dat was je laatste vraag. Kom ${hoursUntilResetLabel()} terug!`, () => setPhase('result'))
+          : () => setPhase('result')
+        tts.speak(responseText, onEnd)
         setThreadTopic(topic)
         setThreadTurns(1)
         setThreadMessages([
@@ -832,7 +877,7 @@ export default function App() {
         position: 'relative', zIndex: 2, padding: '0 24px 8px',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
       }}>
-        <MicButton phase={phase as BliepState | 'result'} c={c} onClick={handleMicClick} />
+        <MicButton phase={phase as BliepState | 'result'} c={c} onClick={handleMicClick} remaining={remaining} />
 
         {(phase === 'result' || phase === 'confused') && threadTopic && (
           <button onClick={clearThread} style={{

@@ -38,14 +38,15 @@ Als je het antwoord niet precies weet, deel dan wat je er wél van weet en doe e
 Geef je antwoord als JSON met exact deze twee velden: {"answer": "...", "topic": "1-2 woorden in het Nederlands"}
 Als je het antwoord echt niet kunt geven: {"answer": "Dat weet ik even niet — vraag het nog eens met andere woorden?", "topic": null}`
 
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024 // 10 MB
+
 export const onRequestPost: PagesFunction<Env> = async (context) => {
-  // Only accept requests from the app's own origin
   const origin = context.request.headers.get('Origin') ?? ''
   const host = context.request.headers.get('Host') ?? ''
-  const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1')
-  const isSameOrigin = origin.includes(host) || isLocalhost
+  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+  const isSameOrigin = origin !== '' && (origin === `https://${host}` || isLocalhost)
 
-  if (!isSameOrigin && origin !== '') {
+  if (!isSameOrigin) {
     return new Response('Forbidden', { status: 403 })
   }
 
@@ -101,7 +102,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       const audio = formData.get('audio') as unknown as File | null
       const historyRaw = formData.get('history')
 
-      if (!audio || audio.size === 0) {
+      if (!audio || audio.size === 0 || audio.size > MAX_AUDIO_BYTES) {
         return Response.json({ error: 'Invalid audio' }, { status: 400 })
       }
 
