@@ -1021,7 +1021,7 @@ export default function App() {
             <RobotCustomize phase={phase} onRecord={handleRobotCustomizeMic} onSkip={handleRobotSkipCustomize} c={c} bg={bg} />
           )}
           {phase === 'robot-generating' && (
-            <RobotGenerating c={c} bg={bg} />
+            <RobotGenerating bg={bg} />
           )}
           {phase === 'robot-done' && robotSession && (
             <RobotScore
