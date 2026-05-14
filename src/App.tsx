@@ -50,11 +50,29 @@ import type { PlantSession, PlantId, CareAction } from './lib/garden'
 import { RobotMissionSelect } from './components/RobotMissionSelect'
 import { RobotBuilding } from './components/RobotBuilding'
 import { RobotScore } from './components/RobotScore'
+import { RobotCustomize } from './components/RobotCustomize'
+import { RobotGenerating } from './components/RobotGenerating'
+import { RobotGallery } from './components/RobotGallery'
 import {
-  buildRobotSession, applyRobotPick, robotScoreText, ROBOT_STATUS, CATEGORIES,
+  buildRobotSession, applyRobotPick, robotScoreText, robotScoreStars, ROBOT_STATUS, CATEGORIES,
 } from './lib/robot'
 import type { RobotSession, MissionId, CategoryId, PartKey } from './lib/robot'
+import { loadRobotHistory, saveRobotImage } from './lib/robotHistory'
+import type { RobotHistoryItem } from './lib/robotHistory'
 import { getRemainingQuestions, consumeQuestion, hoursUntilResetLabel, setVip, WARNING_QUESTIONS } from './lib/rateLimit'
+
+async function compressImageB64(b64: string, size = 400): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = size; canvas.height = size
+      canvas.getContext('2d')!.drawImage(img, 0, 0, size, size)
+      resolve(canvas.toDataURL('image/jpeg', 0.75))
+    }
+    img.src = `data:image/png;base64,${b64}`
+  })
+}
 
 type AppMode = 'questions' | 'tables' | 'thinking' | 'geo' | 'games'
 type Phase = BliepState | 'result'
@@ -64,6 +82,7 @@ type Phase = BliepState | 'result'
            | 'games-menu'
            | 'garden-select' | 'garden-growing' | 'garden-action' | 'garden-done'
            | 'robot-select' | 'robot-building' | 'robot-fact' | 'robot-done'
+           | 'robot-customize' | 'robot-listening' | 'robot-generating'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 interface AskResponse { answer: string | null; topic: string | null; question?: string | null }
@@ -112,6 +131,9 @@ export default function App() {
   const [geoSession, setGeoSession] = useState<GeoSession | null>(null)
   const [gardenSession, setGardenSession] = useState<PlantSession | null>(null)
   const [robotSession, setRobotSession] = useState<RobotSession | null>(null)
+  const [robotImageDataUrl, setRobotImageDataUrl] = useState<string | null>(null)
+  const [showRobotGallery, setShowRobotGallery] = useState(false)
+  const [robotHistory, setRobotHistory] = useState<RobotHistoryItem[]>(() => loadRobotHistory())
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [hasInteracted, setHasInteracted] = useState(false)
@@ -134,6 +156,8 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const shouldProcessStopRef = useRef(false)
+  const recordingCallbackRef = useRef<((blob: Blob) => void) | null>(null)
+  const listeningPhaseOverrideRef = useRef<Phase | null>(null)
 
   const recordingSupported = typeof window !== 'undefined'
     && typeof MediaRecorder !== 'undefined'
@@ -272,12 +296,19 @@ export default function App() {
           setPhase('idle')
           return
         }
-        processRecordedAudio(blob)
+        if (recordingCallbackRef.current) {
+          const cb = recordingCallbackRef.current
+          recordingCallbackRef.current = null
+          cb(blob)
+        } else {
+          processRecordedAudio(blob)
+        }
       }
 
       listenStartRef.current = Date.now()
       recorder.start()
-      setPhase('listening')
+      setPhase(listeningPhaseOverrideRef.current ?? 'listening')
+      listeningPhaseOverrideRef.current = null
     } catch {
       handleRecordingError('not-allowed')
     }
@@ -454,17 +485,81 @@ export default function App() {
     setPhase('robot-fact')
     tts.speak(partDef.fact, () => {
       if (nextSession.done) {
-        setPhase('robot-done')
-        tts.speak(robotScoreText(nextSession))
+        handleRobotDoneBuilding()
       } else {
         setPhase('robot-building')
       }
     })
+  }, [robotSession, tts]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleRobotDoneBuilding = useCallback(() => {
+    setRobotImageDataUrl(null)
+    setPhase('robot-customize')
+    tts.speak('Super! Je robot is bijna klaar! Wil je Bliep nog iets vertellen over hoe hij er uit moet zien?')
+  }, [tts])
+
+  const handleRobotCustomizeMic = useCallback(() => {
+    if (phase === 'robot-customize') {
+      listeningPhaseOverrideRef.current = 'robot-listening'
+      recordingCallbackRef.current = (blob: Blob) => {
+        void handleRobotGenerate(blob, '')
+      }
+      void startRecording()
+    } else if (phase === 'robot-listening') {
+      stopRecording()
+    }
+  }, [phase, startRecording, stopRecording]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleRobotSkipCustomize = useCallback(() => {
+    void handleRobotGenerate(null, '')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleRobotGenerate = useCallback(async (audioBlob: Blob | null, text: string) => {
+    if (!robotSession) return
+    setPhase('robot-generating')
+    tts.speak('Geweldig! Bliep gaat nu je robot bouwen. Even geduld!')
+
+    const formData = new FormData()
+    formData.append('mission', robotSession.mission)
+    formData.append('picks', JSON.stringify(robotSession.picks))
+    if (audioBlob) formData.append('audio', audioBlob, 'customization.webm')
+    if (text) formData.append('customization', text)
+
+    try {
+      const res = await fetch('/api/robot-image', { method: 'POST', body: formData })
+      const data = await res.json() as { b64?: string; customization?: string; error?: string }
+      if (!data.b64) throw new Error(data.error ?? 'no image')
+
+      const imageDataUrl = await compressImageB64(data.b64)
+      const customizationText = data.customization ?? text
+
+      setRobotImageDataUrl(imageDataUrl)
+
+      const item: RobotHistoryItem = {
+        id: crypto.randomUUID(),
+        ts: Date.now(),
+        mission: robotSession.mission,
+        picks: robotSession.picks,
+        customization: customizationText,
+        imageDataUrl,
+        totalScore: robotSession.totalScore,
+        stars: robotScoreStars(robotSession.totalScore),
+      }
+      saveRobotImage(item)
+      setRobotHistory(loadRobotHistory())
+
+      setPhase('robot-done')
+      tts.speak(robotScoreText(robotSession))
+    } catch {
+      setPhase('robot-done')
+      tts.speak('Oeps, de robot kon niet gebouwd worden. Probeer het nog een keer!')
+    }
   }, [robotSession, tts])
 
   const handleRobotRestart = useCallback((mission?: MissionId) => {
     const m = mission ?? robotSession?.mission ?? 'hospital'
     setRobotSession(buildRobotSession(m))
+    setRobotImageDataUrl(null)
     setPhase('robot-building')
     const names: Record<MissionId, string> = { hospital: 'Ziekenhuis', space: 'Ruimteverkenner', fire: 'Brandweer' }
     tts.speak(`Opnieuw bouwen! Een robot voor de ${names[m]}!`)
@@ -601,6 +696,9 @@ export default function App() {
     phase === 'garden-action' ? 'speaking' :
     phase === 'garden-done' ? (gardenSession && gardenSession.health < 20 && gardenSession.stagesCompleted < 1 ? 'confused' : 'idle') :
     phase === 'robot-select' || phase === 'robot-building' || phase === 'robot-done' ? 'idle' :
+    phase === 'robot-customize' ? 'idle' :
+    phase === 'robot-listening' ? 'listening' :
+    phase === 'robot-generating' ? 'thinking' :
     phase === 'robot-fact' ? 'speaking' :
     phase as BliepState
   const isTablesMode = appMode === 'tables'
@@ -888,6 +986,8 @@ export default function App() {
                 if (game === 'garden') setPhase('garden-select')
                 if (game === 'robot')  setPhase('robot-select')
               }}
+              onShowGallery={() => setShowRobotGallery(true)}
+              hasRobotHistory={robotHistory.length > 0}
               c={c} bg={bg}
             />
           )}
@@ -917,13 +1017,24 @@ export default function App() {
           {(phase === 'robot-building' || phase === 'robot-fact') && robotSession && (
             <RobotBuilding session={robotSession} phase={phase} onPick={handleRobotPick} c={c} bg={bg} />
           )}
+          {(phase === 'robot-customize' || phase === 'robot-listening') && (
+            <RobotCustomize phase={phase} onRecord={handleRobotCustomizeMic} onSkip={handleRobotSkipCustomize} c={c} bg={bg} />
+          )}
+          {phase === 'robot-generating' && (
+            <RobotGenerating c={c} bg={bg} />
+          )}
           {phase === 'robot-done' && robotSession && (
             <RobotScore
               session={robotSession}
+              imageDataUrl={robotImageDataUrl}
               onReplay={() => handleRobotRestart()}
               onChangeMission={() => setPhase('robot-select')}
+              onShowGallery={() => setShowRobotGallery(true)}
               c={c} bg={bg}
             />
+          )}
+          {showRobotGallery && (
+            <RobotGallery history={robotHistory} onClose={() => setShowRobotGallery(false)} c={c} bg={bg} />
           )}
         </div>
       )}

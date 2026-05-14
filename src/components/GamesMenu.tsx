@@ -29,11 +29,13 @@ const GAME_CARDS: GameCard[] = [
 
 interface Props {
   onSelectGame: (game: GameId) => void
+  onShowGallery?: () => void
+  hasRobotHistory?: boolean
   c: BliepPalette
   bg: BgPalette
 }
 
-export function GamesMenu({ onSelectGame, c, bg }: Props) {
+export function GamesMenu({ onSelectGame, onShowGallery, hasRobotHistory, c, bg }: Props) {
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
       {GAME_CARDS.map(card => (
@@ -73,6 +75,21 @@ export function GamesMenu({ onSelectGame, c, bg }: Props) {
           }}>▶</div>
         </button>
       ))}
+      {hasRobotHistory && onShowGallery && (
+        <button
+          onClick={onShowGallery}
+          style={{
+            width: '100%', border: `1.5px solid ${bg.line}`,
+            background: 'transparent', borderRadius: 14, cursor: 'pointer',
+            padding: '10px 16px',
+            fontFamily: '"Nunito", system-ui', fontSize: 14, fontWeight: 800,
+            color: c.deepBlue, opacity: 0.7,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}
+        >
+          🖼️ Bekijk mijn robots
+        </button>
+      )}
     </div>
   )
 }

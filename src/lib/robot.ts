@@ -216,10 +216,13 @@ const SCORES: Record<PartKey, Record<MissionId, number>> = {
 }
 
 export const ROBOT_STATUS: Record<string, string> = {
-  'robot-select':   'Kies een missie!',
-  'robot-building': 'Bouw je robot!',
-  'robot-fact':     'Bliep vertelt iets!',
-  'robot-done':     'Klaar!',
+  'robot-select':     'Kies een missie!',
+  'robot-building':   'Bouw je robot!',
+  'robot-fact':       'Bliep vertelt iets!',
+  'robot-customize':  'Vertel het Bliep!',
+  'robot-listening':  'Ik luister naar je…',
+  'robot-generating': 'Bliep is aan het bouwen…',
+  'robot-done':       'Klaar!',
 }
 
 export function buildRobotSession(mission: MissionId): RobotSession {

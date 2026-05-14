@@ -4,8 +4,10 @@ import type { BliepPalette, BgPalette } from '../lib/palettes'
 
 interface Props {
   session: RobotSession
+  imageDataUrl: string | null
   onReplay: () => void
   onChangeMission: () => void
+  onShowGallery: () => void
   c: BliepPalette
   bg: BgPalette
 }
@@ -17,12 +19,27 @@ function scoreColor(score: number): string {
   return '#9b0000'
 }
 
-export function RobotScore({ session, onReplay, onChangeMission, c, bg }: Props) {
+export function RobotScore({ session, imageDataUrl, onReplay, onChangeMission, onShowGallery, c, bg }: Props) {
   const stars = robotScoreStars(session.totalScore)
   const mission = MISSIONS.find(m => m.id === session.mission)!
 
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+      {/* Generated robot image */}
+      {imageDataUrl ? (
+        <img
+          src={imageDataUrl}
+          alt={`${mission.name} robot`}
+          style={{
+            width: '100%', maxWidth: 320,
+            borderRadius: 18, display: 'block',
+            boxShadow: `0 6px 24px ${c.blue}44`,
+          }}
+        />
+      ) : (
+        <div style={{ fontSize: 72, lineHeight: 1 }}>🤖</div>
+      )}
+
       {/* Stars */}
       <div style={{ fontSize: 40, letterSpacing: 4, lineHeight: 1 }}>
         {stars === 0
@@ -93,6 +110,19 @@ export function RobotScore({ session, onReplay, onChangeMission, c, bg }: Props)
           )
         })}
       </div>
+
+      {/* Gallery button */}
+      <button
+        onClick={onShowGallery}
+        style={{
+          border: `1.5px solid ${bg.line}`, background: 'transparent',
+          borderRadius: 99, cursor: 'pointer',
+          fontFamily: '"Nunito", system-ui', fontSize: 13, fontWeight: 800,
+          color: c.deepBlue, opacity: 0.65, padding: '6px 18px',
+        }}
+      >
+        🖼️ Bekijk alle robots
+      </button>
 
       {/* Buttons */}
       <div style={{ width: '100%', maxWidth: 280, display: 'flex', flexDirection: 'column', gap: 10 }}>
