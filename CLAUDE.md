@@ -31,7 +31,7 @@ The app has five modes, switched via a scrollable tab bar at the top:
 | `tables` | ✖ Tafels | Multiplication tables practice |
 | `thinking` | 🧠 Denken | Critical & logical thinking (multiple choice) |
 | `geo` | 🗺 Kaart | Dutch geography practice (multiple choice) |
-| `games` | 🎮 Spellen | Games hub — currently contains Plantentuin |
+| `games` | 🎮 Spellen | Games hub — contains Plantentuin and Robot Bouwen |
 
 ## Phase state machine
 
@@ -63,6 +63,13 @@ games-menu → garden-select → garden-growing ⇄ garden-action
 ```
 Child instructs Bliep to care for a plant (3 care actions per stage, 5 stages total). After each action, emoji particles animate from Bliep to the plant; Bliep speaks an educational biology fact via TTS. Plant health is calculated from distance to ideal water/light/nutrients. Health < 20 ends the stage as a wilt; health ≥ 60 after 3 turns advances the stage. A `💡 Vraag Bliep` hint button speaks what the plant needs most without advancing state.
 
+**Games mode — Robot Bouwen (Robot Building):**
+```
+games-menu → robot-select → robot-building ⇄ robot-fact
+                                           ↘ robot-done
+```
+Child picks a mission (Ziekenhuis, Ruimteverkenner, Brandweer), then assembles a robot by choosing one part from each of 5 categories (sensors, arms, drive, power, extra module). After each pick, Bliep speaks an educational robotics fact via TTS (`robot-fact` phase disables buttons). Scored 0–3 stars based on compatibility of chosen parts with the mission (max 15 points). Fully offline.
+
 ## Key files
 
 | File | Purpose |
@@ -84,6 +91,11 @@ Child instructs Bliep to care for a plant (3 care actions per stage, 5 stages to
 | `src/components/GardenGrowing.tsx` | Main garden gameplay — plant visual, resource chips, action buttons, hint button |
 | `src/components/CareParticles.tsx` | CSS-animated emoji particles that arc from Bliep to the plant on each action |
 | `src/components/GardenScore.tsx` | End-of-session stars, stage count, replay/change-plant buttons |
+| `src/lib/robot.ts` | Robot Bouwen — mission defs, part categories (15 parts), compatibility scores, session factory, scoring |
+| `src/components/RobotMissionSelect.tsx` | Mission picker — 3 mission cards (Ziekenhuis, Ruimteverkenner, Brandweer) |
+| `src/components/RobotBuilding.tsx` | Main robot assembly — step-by-step part selection, robot preview row, sparkle animation |
+| `src/components/BuildSparkle.tsx` | CSS-animated ✨ burst particles when a robot part is added |
+| `src/components/RobotScore.tsx` | End-of-game stars, score chip, per-part breakdown, replay/change-mission buttons |
 | `functions/api/ask.ts` | OpenAI gateway — validates origin, transcribes uploaded audio, generates Dutch answer/topic |
 
 ## Secrets and environment

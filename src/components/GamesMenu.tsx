@@ -1,6 +1,6 @@
 import type { BliepPalette, BgPalette } from '../lib/palettes'
 
-type GameId = 'garden'
+type GameId = 'garden' | 'robot'
 
 interface GameCard {
   id: GameId
@@ -18,6 +18,13 @@ const GAME_CARDS: GameCard[] = [
     subtitle: 'Help Bliep om een plant groot te maken!',
     color: '#2BA37A',
   },
+  {
+    id: 'robot',
+    emoji: '🤖',
+    title: 'Robot Bouwen',
+    subtitle: 'Bouw de perfecte robot voor een missie!',
+    color: '#2E6FD8',
+  },
 ]
 
 interface Props {
@@ -29,12 +36,6 @@ interface Props {
 export function GamesMenu({ onSelectGame, c, bg }: Props) {
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{
-        fontFamily: '"Patrick Hand", cursive', fontSize: 22,
-        color: c.deepBlue, opacity: 0.75, textAlign: 'center', marginBottom: 4,
-      }}>
-        Kies een spel!
-      </div>
       {GAME_CARDS.map(card => (
         <button
           key={card.id}

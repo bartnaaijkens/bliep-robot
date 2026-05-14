@@ -28,6 +28,13 @@ Built as a PWA so it can be added to the phone home screen and shared with class
 - No API calls — fully offline; feedback spoken aloud via TTS
 - Target audience: 8–9 year olds (Dutch primary school groep 5–6)
 
+**Robot Bouwen game (🤖)**
+- Switch to the 🎮 Spellen tab and pick "Robot Bouwen"
+- Choose a mission (hospital, space, firefighting), then pick one part from each of 5 categories
+- Bliep speaks an educational robotics fact after each choice
+- Scored 0–3 stars based on how well the assembled parts match the chosen mission
+- Fully offline — no API calls
+
 ## Stack
 
 | Layer | Technology |

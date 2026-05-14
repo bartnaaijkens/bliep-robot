@@ -47,6 +47,13 @@ import {
   WILT_FEEDBACK, WARNING_FEEDBACK,
 } from './lib/garden'
 import type { PlantSession, PlantId, CareAction } from './lib/garden'
+import { RobotMissionSelect } from './components/RobotMissionSelect'
+import { RobotBuilding } from './components/RobotBuilding'
+import { RobotScore } from './components/RobotScore'
+import {
+  buildRobotSession, applyRobotPick, robotScoreText, ROBOT_STATUS, CATEGORIES,
+} from './lib/robot'
+import type { RobotSession, MissionId, CategoryId, PartKey } from './lib/robot'
 import { getRemainingQuestions, consumeQuestion, hoursUntilResetLabel, setVip, WARNING_QUESTIONS } from './lib/rateLimit'
 
 type AppMode = 'questions' | 'tables' | 'thinking' | 'geo' | 'games'
@@ -56,6 +63,7 @@ type Phase = BliepState | 'result'
            | 'geo-question' | 'geo-correct' | 'geo-wrong' | 'geo-done'
            | 'games-menu'
            | 'garden-select' | 'garden-growing' | 'garden-action' | 'garden-done'
+           | 'robot-select' | 'robot-building' | 'robot-fact' | 'robot-done'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 interface AskResponse { answer: string | null; topic: string | null; question?: string | null }
@@ -103,6 +111,7 @@ export default function App() {
   const [thinkingSession, setThinkingSession] = useState<ThinkingSession | null>(null)
   const [geoSession, setGeoSession] = useState<GeoSession | null>(null)
   const [gardenSession, setGardenSession] = useState<PlantSession | null>(null)
+  const [robotSession, setRobotSession] = useState<RobotSession | null>(null)
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [hasInteracted, setHasInteracted] = useState(false)
@@ -430,6 +439,37 @@ export default function App() {
     tts.speak(`Opnieuw beginnen! Zorg goed voor je ${name}!`)
   }, [gardenSession, tts])
 
+  const handleRobotMissionSelect = useCallback((mission: MissionId) => {
+    setRobotSession(buildRobotSession(mission))
+    setPhase('robot-building')
+    const names: Record<MissionId, string> = { hospital: 'Ziekenhuis', space: 'Ruimteverkenner', fire: 'Brandweer' }
+    tts.speak(`Jij bouwt een robot voor de ${names[mission]}! Kies de beste onderdelen!`)
+  }, [tts])
+
+  const handleRobotPick = useCallback((category: CategoryId, partKey: PartKey) => {
+    if (!robotSession) return
+    const partDef = CATEGORIES.find(c => c.id === category)!.options.find(o => o.key === partKey)!
+    const nextSession = applyRobotPick(robotSession, category, partKey)
+    setRobotSession(nextSession)
+    setPhase('robot-fact')
+    tts.speak(partDef.fact, () => {
+      if (nextSession.done) {
+        setPhase('robot-done')
+        tts.speak(robotScoreText(nextSession))
+      } else {
+        setPhase('robot-building')
+      }
+    })
+  }, [robotSession, tts])
+
+  const handleRobotRestart = useCallback((mission?: MissionId) => {
+    const m = mission ?? robotSession?.mission ?? 'hospital'
+    setRobotSession(buildRobotSession(m))
+    setPhase('robot-building')
+    const names: Record<MissionId, string> = { hospital: 'Ziekenhuis', space: 'Ruimteverkenner', fire: 'Brandweer' }
+    tts.speak(`Opnieuw bouwen! Een robot voor de ${names[m]}!`)
+  }, [robotSession, tts])
+
   const handleModeSwitch = useCallback((mode: AppMode) => {
     tts.stop()
     abortRecording()
@@ -560,6 +600,8 @@ export default function App() {
     phase === 'garden-growing' ? 'idle' :
     phase === 'garden-action' ? 'speaking' :
     phase === 'garden-done' ? (gardenSession && gardenSession.health < 20 && gardenSession.stagesCompleted < 1 ? 'confused' : 'idle') :
+    phase === 'robot-select' || phase === 'robot-building' || phase === 'robot-done' ? 'idle' :
+    phase === 'robot-fact' ? 'speaking' :
     phase as BliepState
   const isTablesMode = appMode === 'tables'
   const isThinkingMode = appMode === 'thinking'
@@ -577,7 +619,7 @@ export default function App() {
     confused:  'Oeps… dat weet ik even niet',
     result:    'Ik ben er nog!',
   }
-  const statusText = GARDEN_STATUS[phase] ?? GEO_STATUS[phase] ?? THINKING_STATUS[phase] ?? TABLES_STATUS[phase] ?? questionsStatusText[phase]
+  const statusText = ROBOT_STATUS[phase] ?? GARDEN_STATUS[phase] ?? GEO_STATUS[phase] ?? THINKING_STATUS[phase] ?? TABLES_STATUS[phase] ?? questionsStatusText[phase]
 
   return (
     <div style={{
@@ -844,6 +886,7 @@ export default function App() {
             <GamesMenu
               onSelectGame={(game) => {
                 if (game === 'garden') setPhase('garden-select')
+                if (game === 'robot')  setPhase('robot-select')
               }}
               c={c} bg={bg}
             />
@@ -865,6 +908,20 @@ export default function App() {
               session={gardenSession}
               onReplay={() => handleGardenRestart()}
               onChangeSetup={() => setPhase('garden-select')}
+              c={c} bg={bg}
+            />
+          )}
+          {phase === 'robot-select' && (
+            <RobotMissionSelect onSelect={handleRobotMissionSelect} c={c} bg={bg} />
+          )}
+          {(phase === 'robot-building' || phase === 'robot-fact') && robotSession && (
+            <RobotBuilding session={robotSession} phase={phase} onPick={handleRobotPick} c={c} bg={bg} />
+          )}
+          {phase === 'robot-done' && robotSession && (
+            <RobotScore
+              session={robotSession}
+              onReplay={() => handleRobotRestart()}
+              onChangeMission={() => setPhase('robot-select')}
               c={c} bg={bg}
             />
           )}
