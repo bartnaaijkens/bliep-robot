@@ -34,6 +34,7 @@ export function RobotScore({ session, imageDataUrl, onReplay, onChangeMission, o
             width: '100%', maxWidth: 320,
             borderRadius: 18, display: 'block',
             boxShadow: `0 6px 24px ${c.blue}44`,
+            marginTop: 12,
           }}
         />
       ) : (
