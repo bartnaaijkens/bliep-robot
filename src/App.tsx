@@ -158,6 +158,8 @@ export default function App() {
   const shouldProcessStopRef = useRef(false)
   const recordingCallbackRef = useRef<((blob: Blob) => void) | null>(null)
   const listeningPhaseOverrideRef = useRef<Phase | null>(null)
+  const robotSessionRef = useRef(robotSession)
+  robotSessionRef.current = robotSession
 
   const recordingSupported = typeof window !== 'undefined'
     && typeof MediaRecorder !== 'undefined'
@@ -499,13 +501,14 @@ export default function App() {
   }, [tts])
 
   const handleRobotGenerate = useCallback(async (audioBlob: Blob | null, text: string) => {
-    if (!robotSession) return
+    const session = robotSessionRef.current
+    if (!session) return
     setPhase('robot-generating')
     tts.speak('Geweldig! Bliep gaat nu je robot bouwen. Even geduld!')
 
     const formData = new FormData()
-    formData.append('mission', robotSession.mission)
-    formData.append('picks', JSON.stringify(robotSession.picks))
+    formData.append('mission', session.mission)
+    formData.append('picks', JSON.stringify(session.picks))
     if (audioBlob) formData.append('audio', audioBlob, 'customization.webm')
     if (text) formData.append('customization', text)
 
@@ -522,23 +525,23 @@ export default function App() {
       const item: RobotHistoryItem = {
         id: crypto.randomUUID(),
         ts: Date.now(),
-        mission: robotSession.mission,
-        picks: robotSession.picks,
+        mission: session.mission,
+        picks: session.picks,
         customization: customizationText,
         imageDataUrl,
-        totalScore: robotSession.totalScore,
-        stars: robotScoreStars(robotSession.totalScore),
+        totalScore: session.totalScore,
+        stars: robotScoreStars(session.totalScore),
       }
       saveRobotImage(item)
       setRobotHistory(loadRobotHistory())
 
       setPhase('robot-done')
-      tts.speak(robotScoreText(robotSession))
+      tts.speak(robotScoreText(session))
     } catch {
       setPhase('robot-done')
       tts.speak('Oeps, de robot kon niet gebouwd worden. Probeer het nog een keer!')
     }
-  }, [robotSession, tts])
+  }, [tts])
 
   const handleRobotCustomizeMic = useCallback(() => {
     if (phase === 'robot-customize') {
@@ -550,11 +553,11 @@ export default function App() {
     } else if (phase === 'robot-listening') {
       stopRecording()
     }
-  }, [phase, handleRobotGenerate, startRecording, stopRecording])
+  }, [phase, startRecording, stopRecording])
 
   const handleRobotSkipCustomize = useCallback(() => {
     void handleRobotGenerate(null, '')
-  }, [handleRobotGenerate])
+  }, [])
 
   const handleRobotRestart = useCallback((mission?: MissionId) => {
     const m = mission ?? robotSession?.mission ?? 'hospital'
