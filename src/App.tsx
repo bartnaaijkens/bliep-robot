@@ -498,22 +498,6 @@ export default function App() {
     tts.speak('Super! Je robot is bijna klaar! Wil je Bliep nog iets vertellen over hoe hij er uit moet zien?')
   }, [tts])
 
-  const handleRobotCustomizeMic = useCallback(() => {
-    if (phase === 'robot-customize') {
-      listeningPhaseOverrideRef.current = 'robot-listening'
-      recordingCallbackRef.current = (blob: Blob) => {
-        void handleRobotGenerate(blob, '')
-      }
-      void startRecording()
-    } else if (phase === 'robot-listening') {
-      stopRecording()
-    }
-  }, [phase, startRecording, stopRecording]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleRobotSkipCustomize = useCallback(() => {
-    void handleRobotGenerate(null, '')
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleRobotGenerate = useCallback(async (audioBlob: Blob | null, text: string) => {
     if (!robotSession) return
     setPhase('robot-generating')
@@ -555,6 +539,22 @@ export default function App() {
       tts.speak('Oeps, de robot kon niet gebouwd worden. Probeer het nog een keer!')
     }
   }, [robotSession, tts])
+
+  const handleRobotCustomizeMic = useCallback(() => {
+    if (phase === 'robot-customize') {
+      listeningPhaseOverrideRef.current = 'robot-listening'
+      recordingCallbackRef.current = (blob: Blob) => {
+        void handleRobotGenerate(blob, '')
+      }
+      void startRecording()
+    } else if (phase === 'robot-listening') {
+      stopRecording()
+    }
+  }, [phase, handleRobotGenerate, startRecording, stopRecording])
+
+  const handleRobotSkipCustomize = useCallback(() => {
+    void handleRobotGenerate(null, '')
+  }, [handleRobotGenerate])
 
   const handleRobotRestart = useCallback((mission?: MissionId) => {
     const m = mission ?? robotSession?.mission ?? 'hospital'
